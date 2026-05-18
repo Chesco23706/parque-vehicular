@@ -6,7 +6,7 @@ const SAFE = new Set(['GET', 'HEAD', 'OPTIONS']);
 export function csrf(req, res, next) {
   if (!req.cookies?.pv_csrf) {
     res.cookie('pv_csrf', crypto.randomBytes(24).toString('hex'), {
-      sameSite: 'strict',
+      sameSite: config.cookieSecure ? 'none' : 'strict',
       secure: config.cookieSecure,
       httpOnly: false
     });

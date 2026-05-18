@@ -12,6 +12,10 @@ export const config = {
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
   databasePath: process.env.DATABASE_PATH || './parque_vehicular.db',
   frontendOrigin: process.env.FRONTEND_ORIGIN || 'http://127.0.0.1:5173',
+  frontendOrigins: (process.env.FRONTEND_ORIGINS || process.env.FRONTEND_ORIGIN || 'http://127.0.0.1:5173')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean),
   maxUploadMb: Number(process.env.MAX_UPLOAD_MB || 25),
   cookieSecure: process.env.COOKIE_SECURE === 'true' || process.env.NODE_ENV === 'production',
   requireHttps: process.env.REQUIRE_HTTPS === 'true' || process.env.NODE_ENV === 'production',

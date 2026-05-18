@@ -16,7 +16,7 @@ export function expiresInMinutes(minutes = config.sessionMinutes) {
 export function cookieOptions(maxAgeMs = config.sessionMinutes * 60 * 1000, httpOnly = true) {
   return {
     httpOnly,
-    sameSite: 'strict',
+    sameSite: config.cookieSecure ? 'none' : 'strict',
     secure: config.cookieSecure,
     maxAge: maxAgeMs,
     path: '/'

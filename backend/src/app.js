@@ -23,6 +23,7 @@ await migrate();
 
 const app = express();
 const allowedOrigin = /^http:\/\/(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}):5173$/;
+const allowedFrontendOrigins = new Set(config.frontendOrigins);
 
 app.set('trust proxy', 1);
 app.use((req, res, next) => {
@@ -43,7 +44,7 @@ app.use(helmet({
       scriptSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", 'data:', 'blob:'],
-      connectSrc: ["'self'", config.frontendOrigin, 'http://localhost:4000', 'http://127.0.0.1:4000'],
+      connectSrc: ["'self'", ...config.frontendOrigins, 'http://localhost:4000', 'http://127.0.0.1:4000'],
       objectSrc: ["'none'"],
       frameAncestors: ["'none'"],
       baseUri: ["'self'"],
@@ -53,7 +54,7 @@ app.use(helmet({
 }));
 app.use(cors({
   origin(origin, callback) {
-    if (!origin || origin === config.frontendOrigin || allowedOrigin.test(origin)) return callback(null, true);
+    if (!origin || allowedFrontendOrigins.has(origin) || allowedOrigin.test(origin)) return callback(null, true);
     return callback(new Error('Origen no permitido por CORS'));
   },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
