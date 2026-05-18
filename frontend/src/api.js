@@ -1,12 +1,24 @@
 const API_HOST = window.location.hostname || '127.0.0.1';
 const API = import.meta.env.VITE_API_URL || `http://${API_HOST}:4000/api`;
+let csrfToken = '';
 
 function csrf() {
-  return document.cookie.split('; ').find((row) => row.startsWith('pv_csrf='))?.split('=')[1] || '';
+  return csrfToken || document.cookie.split('; ').find((row) => row.startsWith('pv_csrf='))?.split('=')[1] || '';
+}
+
+async function ensureCsrf() {
+  if (csrfToken) return csrfToken;
+  const res = await fetch(`${API}/csrf`, { credentials: 'include' });
+  const data = await res.json();
+  csrfToken = data.csrfToken || '';
+  return csrfToken;
 }
 
 export async function request(path, options = {}) {
   const isForm = options.body instanceof FormData;
+  const method = String(options.method || 'GET').toUpperCase();
+  const needsCsrf = !['GET', 'HEAD', 'OPTIONS'].includes(method);
+  if (needsCsrf) await ensureCsrf();
   const res = await fetch(`${API}${path}`, {
     credentials: 'include',
     ...options,
