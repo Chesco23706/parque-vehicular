@@ -1,0 +1,19 @@
+{
+  "name": "parque-vehicular",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Plataforma web segura para gestion de vehiculos oficiales por departamentos.",
+  "scripts": {
+    "install:all": "npm --prefix backend install && npm --prefix frontend install",
+    "dev": "concurrently \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\"",
+    "start": "npm --prefix backend start",
+    "seed": "npm --prefix backend run seed"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.106.0",
+    "pg": "^8.21.0"
+  }
+}
