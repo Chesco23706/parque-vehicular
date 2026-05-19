@@ -6,6 +6,9 @@ dist/
 cookies.txt
 npm-debug.log*
 *.log
+*.docx
+docx_render/
+build_private_doc.py
 .DS_Store
 .vercel/
 *.db
