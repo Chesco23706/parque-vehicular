@@ -58,7 +58,7 @@ authRouter.post('/login', loginLimiter, async (req, res) => {
   }
 
   const token = randomToken();
-  await run('UPDATE sesiones SET revoked_at = CURRENT_TIMESTAMP WHERE usuario_id = ? AND revoked_at IS NULL', [user.id]);
+  await run('UPDATE sesiones SET revoked_at = CURRENT_TIMESTAMP WHERE usuario_id = ? AND expires_at <= CURRENT_TIMESTAMP AND revoked_at IS NULL', [user.id]);
   const session = await run(
     `INSERT INTO sesiones (usuario_id, token_hash, ip, user_agent, expires_at)
      VALUES (?, ?, ?, ?, ?)`,

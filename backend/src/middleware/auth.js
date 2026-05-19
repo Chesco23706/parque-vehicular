@@ -24,10 +24,8 @@ export async function authRequired(req, res, next) {
 
   const currentUserAgent = normalizeUserAgent(req);
   if (session.user_agent && session.user_agent !== currentUserAgent) {
-    await run('UPDATE sesiones SET suspicious = 1, revoked_at = CURRENT_TIMESTAMP WHERE id = ?', [session.id]);
+    await run('UPDATE sesiones SET suspicious = 1 WHERE id = ?', [session.id]);
     await audit({ ...req, user: { id: session.user_id } }, 'sesion_sospechosa', 'sesiones', session.id, { reason: 'user_agent_mismatch' });
-    res.clearCookie('pv_session', cookieOptions(0));
-    return res.status(401).json({ message: 'Sesión expirada' });
   }
 
   const currentIp = normalizeIp(req);
