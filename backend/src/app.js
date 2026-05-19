@@ -58,7 +58,7 @@ app.use(cors({
     return callback(new Error('Origen no permitido por CORS'));
   },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'x-csrf-token', 'x-captcha-token'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-csrf-token', 'x-captcha-token'],
   credentials: true
 }));
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, limit: 500, standardHeaders: true, legacyHeaders: false }));

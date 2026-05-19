@@ -4,7 +4,8 @@ import { audit } from '../audit.js';
 import { cookieOptions, expiresInMinutes, hashToken, normalizeIp, normalizeUserAgent } from '../security.js';
 
 export async function authRequired(req, res, next) {
-  const token = req.cookies?.pv_session;
+  const bearer = String(req.get('authorization') || '').match(/^Bearer\s+(.+)$/i)?.[1];
+  const token = req.cookies?.pv_session || bearer;
   if (!token) return res.status(401).json({ message: 'Sesión requerida' });
 
   const session = await get(
@@ -37,7 +38,7 @@ export async function authRequired(req, res, next) {
 
   const nextExpiry = expiresInMinutes(config.sessionMinutes);
   await run('UPDATE sesiones SET last_seen_at = CURRENT_TIMESTAMP, expires_at = ?, ip = ? WHERE id = ?', [nextExpiry, currentIp, session.id]);
-  res.cookie('pv_session', token, cookieOptions(config.sessionMinutes * 60 * 1000));
+  if (req.cookies?.pv_session) res.cookie('pv_session', token, cookieOptions(config.sessionMinutes * 60 * 1000));
   req.session = { id: session.id };
   req.user = {
     id: session.user_id,

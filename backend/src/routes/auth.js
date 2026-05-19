@@ -67,7 +67,7 @@ authRouter.post('/login', loginLimiter, async (req, res) => {
   res.cookie('pv_session', token, cookieOptions(config.sessionMinutes * 60 * 1000));
   await run('UPDATE usuarios SET ultimo_acceso = CURRENT_TIMESTAMP, failed_login_attempts = 0, locked_until = NULL WHERE id = ?', [user.id]);
   await audit({ ...req, user }, 'login', 'usuarios', user.id, { sessionId: session.lastInsertRowid });
-  res.json({ id: user.id, nombre: user.nombre, email: user.email, role: user.role, department_id: user.department_id });
+  res.json({ id: user.id, nombre: user.nombre, email: user.email, role: user.role, department_id: user.department_id, sessionToken: token });
 });
 
 authRouter.post('/logout', authRequired, async (req, res) => {

@@ -1,6 +1,7 @@
 const API_HOST = window.location.hostname || '127.0.0.1';
 const API = import.meta.env.VITE_API_URL || `http://${API_HOST}:4000/api`;
 let csrfToken = '';
+let sessionToken = sessionStorage.getItem('pv_session_token') || '';
 
 function csrf() {
   return csrfToken || document.cookie.split('; ').find((row) => row.startsWith('pv_csrf='))?.split('=')[1] || '';
@@ -19,14 +20,16 @@ export async function request(path, options = {}) {
   const method = String(options.method || 'GET').toUpperCase();
   const needsCsrf = !['GET', 'HEAD', 'OPTIONS'].includes(method);
   if (needsCsrf) await ensureCsrf();
+  const headers = {
+    ...(isForm ? {} : { 'Content-Type': 'application/json' }),
+    'x-csrf-token': csrf(),
+    ...(sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}),
+    ...(options.headers || {})
+  };
   const res = await fetch(`${API}${path}`, {
     credentials: 'include',
     ...options,
-    headers: {
-      ...(isForm ? {} : { 'Content-Type': 'application/json' }),
-      'x-csrf-token': csrf(),
-      ...(options.headers || {})
-    }
+    headers
   });
   if (!res.ok) {
     const error = await res.json().catch(() => ({ message: 'Error de conexión' }));
@@ -34,6 +37,25 @@ export async function request(path, options = {}) {
   }
   const type = res.headers.get('content-type') || '';
   return type.includes('application/json') ? res.json() : res.blob();
+}
+
+async function login(data) {
+  const user = await request('/auth/login', { method: 'POST', body: JSON.stringify(data) });
+  if (user.sessionToken) {
+    sessionToken = user.sessionToken;
+    sessionStorage.setItem('pv_session_token', sessionToken);
+    delete user.sessionToken;
+  }
+  return user;
+}
+
+async function logout() {
+  try {
+    return await request('/auth/logout', { method: 'POST' });
+  } finally {
+    sessionToken = '';
+    sessionStorage.removeItem('pv_session_token');
+  }
 }
 
 export async function downloadFile(path, filename) {
@@ -49,8 +71,8 @@ export async function downloadFile(path, filename) {
 }
 
 export const api = {
-  login: (data) => request('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
-  logout: () => request('/auth/logout', { method: 'POST' }),
+  login,
+  logout,
   me: () => request('/auth/me'),
   usuarios: () => request('/auth/users'),
   crearUsuario: (data) => request('/auth/users', { method: 'POST', body: JSON.stringify(data) }),
