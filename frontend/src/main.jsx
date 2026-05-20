@@ -152,11 +152,11 @@ function Login({ onLogin }) {
           <div className="login-mark">
             <img src="/assets/izamal-logo.jpg" alt="Ayuntamiento de Izamal" />
             <div>
-              <strong>Parque Vehicular Izamal</strong>
+              <strong>Sistema de control de unidades</strong>
               <span>Ayuntamiento 2025-2027</span>
             </div>
           </div>
-          <h1>Control seguro de unidades oficiales</h1>
+          <h1>Sistema de control de unidades</h1>
           <p>Ayuntamiento de Izamal 2025-2027. Acceso por rol para Parque Vehicular, departamentos y talleres. Cada área ve solo la información que le corresponde.</p>
           <div className="login-benefits">
             <span>Roles y permisos</span>
@@ -171,7 +171,6 @@ function Login({ onLogin }) {
           <label>Contraseña<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" /></label>
           {error && <p className="error">{error}</p>}
           <button className="primary" disabled={busy}>{busy ? <Loader2 className="spin" /> : <ShieldCheck />} Entrar</button>
-          <p className="hint">Demo: admin@parque.local / Parque2026!</p>
         </form>
       </section>
     </main>
