@@ -21,6 +21,8 @@ import {
 import { api } from './api.js';
 import './styles.css';
 
+const APP_VERSION = 'v0.5';
+
 const tabs = [
   { id: 'dashboard', label: 'Inicio', icon: LayoutDashboard },
   { id: 'vehiculos', label: 'Vehículos', icon: Car },
@@ -1429,6 +1431,7 @@ function App() {
         <div className="brand side-brand">
           <span>Parque Vehicular<br />Izamal</span>
           <strong>PV</strong>
+          <small>{APP_VERSION}</small>
         </div>
         <nav className="side-nav" aria-label="Navegación principal">
           {visibleTabs.map(({ id, label, icon: Icon }) => (
