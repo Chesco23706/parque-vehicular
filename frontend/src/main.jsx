@@ -127,8 +127,8 @@ function localMonthInput(date = new Date()) {
 }
 
 function Login({ onLogin }) {
-  const [email, setEmail] = useState('admin@parque.local');
-  const [password, setPassword] = useState('Parque2026!');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
