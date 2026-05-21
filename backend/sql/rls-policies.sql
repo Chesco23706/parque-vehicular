@@ -71,4 +71,5 @@ using (
 drop policy if exists bitacora_insert_api on bitacora_actividad;
 create policy bitacora_insert_api on bitacora_actividad
 for insert
+to public
 with check (true);
