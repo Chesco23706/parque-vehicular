@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import { createRequire } from 'node:module';
 import PDFDocument from 'pdfkit';
 import { all, transaction } from '../db.js';
 import { authRequired, requireRole } from '../middleware/auth.js';
@@ -8,8 +7,11 @@ import { audit } from '../audit.js';
 import { downloadFile, removeFiles } from '../storage.js';
 
 export const exportsRouter = Router();
-const require = createRequire(import.meta.url);
-const archiver = require('archiver');
+
+async function createZipArchive(options) {
+  const mod = await import('archiver');
+  return mod.default('zip', options);
+}
 
 async function vehicles(req) {
   const scope = whereClause(departmentScope(req, 'v.department_id'));
@@ -168,7 +170,7 @@ exportsRouter.get('/mensual.zip', authRequired, requireRole('admin'), async (req
 
   res.setHeader('Content-Disposition', `attachment; filename="respaldo-${month}.zip"`);
   res.type('application/zip');
-  const archive = archiver('zip', { zlib: { level: 9 } });
+  const archive = await createZipArchive({ zlib: { level: 9 } });
   archive.on('error', next);
   archive.pipe(res);
   archive.append(JSON.stringify({ generado: new Date().toISOString(), month }, null, 2), { name: 'manifest.json' });

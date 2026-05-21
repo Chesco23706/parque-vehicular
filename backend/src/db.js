@@ -4,12 +4,8 @@ import { config } from './config.js';
 
 const { Pool } = pg;
 
-export const pool = config.databaseUrl
-  ? new Pool({
-      connectionString: config.databaseUrl,
-      ssl: config.databaseSsl ? { rejectUnauthorized: false } : false
-    })
-  : null;
+export let pool = null;
+let poolError = null;
 
 const dbContext = new AsyncLocalStorage();
 
@@ -215,12 +211,25 @@ export function databaseStatus() {
     configured: Boolean(config.databaseUrl),
     ssl: config.databaseSsl,
     rlsSetting: config.rlsAppSetting,
-    migrationsEnabled: config.runMigrations
+    migrationsEnabled: config.runMigrations,
+    poolReady: Boolean(pool),
+    poolError: poolError?.message || null
   };
 }
 
 function requirePool() {
-  if (!pool) throw new Error('Falta DATABASE_URL para conectar PostgreSQL/Supabase');
+  if (pool) return pool;
+  if (!config.databaseUrl) throw new Error('Falta DATABASE_URL para conectar PostgreSQL/Supabase');
+  try {
+    pool = new Pool({
+      connectionString: config.databaseUrl,
+      ssl: config.databaseSsl ? { rejectUnauthorized: false } : false
+    });
+    poolError = null;
+  } catch (error) {
+    poolError = error;
+    throw error;
+  }
   return pool;
 }
 
