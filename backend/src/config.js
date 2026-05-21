@@ -2,6 +2,12 @@
 
 dotenv.config();
 
+function envFlag(name, fallback = false) {
+  const value = process.env[name];
+  if (value === undefined) return fallback;
+  return value === 'true';
+}
+
 export const config = {
   appVersion: process.env.APP_VERSION || '0.5.0',
   port: Number(process.env.PORT || 4000),
@@ -24,7 +30,7 @@ export const config = {
   captchaProvider: (process.env.CAPTCHA_PROVIDER || '').toLowerCase(),
   captchaSecretKey: process.env.CAPTCHA_SECRET_KEY || '',
   captchaSiteKey: process.env.CAPTCHA_SITE_KEY || '',
-  captchaRequired: process.env.CAPTCHA_REQUIRED === 'true' || process.env.NODE_ENV === 'production',
+  captchaRequired: envFlag('CAPTCHA_REQUIRED', process.env.NODE_ENV === 'production'),
   passwordResetMinutes: Number(process.env.PASSWORD_RESET_MINUTES || 20),
   mfaRequiredRoles: (process.env.MFA_REQUIRED_ROLES || 'admin')
     .split(',')
