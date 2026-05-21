@@ -49,6 +49,18 @@ async function login(data) {
   return user;
 }
 
+async function securityConfig() {
+  return request('/security/config');
+}
+
+async function bootstrapMfa(data) {
+  return request('/auth/mfa/bootstrap', { method: 'POST', body: JSON.stringify(data) });
+}
+
+async function enableBootstrapMfa(data) {
+  return request('/auth/mfa/bootstrap/enable', { method: 'POST', body: JSON.stringify(data) });
+}
+
 async function logout() {
   try {
     return await request('/auth/logout', { method: 'POST' });
@@ -71,7 +83,10 @@ export async function downloadFile(path, filename) {
 }
 
 export const api = {
+  securityConfig,
   login,
+  bootstrapMfa,
+  enableBootstrapMfa,
   logout,
   me: () => request('/auth/me'),
   usuarios: () => request('/auth/users'),
@@ -88,6 +103,9 @@ export const api = {
   crearVehiculo: (data) => request('/vehiculos', { method: 'POST', body: JSON.stringify(data) }),
   editarVehiculo: (id, data) => request(`/vehiculos/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   eliminarVehiculo: (id) => request(`/vehiculos/${id}`, { method: 'DELETE' }),
+  crearVehículo: (data) => request('/vehiculos', { method: 'POST', body: JSON.stringify(data) }),
+  editarVehículo: (id, data) => request(`/vehiculos/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  eliminarVehículo: (id) => request(`/vehiculos/${id}`, { method: 'DELETE' }),
   reportes: () => request('/reportes'),
   reparaciones: () => request('/reparaciones'),
   crearReparacion: (data) => request('/reparaciones', { method: 'POST', body: data instanceof FormData ? data : JSON.stringify(data) }),
@@ -105,6 +123,7 @@ export const api = {
   alertasChecklist: () => request('/checklists/alertas'),
   historial: () => request('/auditoria'),
   exportarVehiculos: () => downloadFile('/exportar/vehiculos.xls', 'vehiculos.xls'),
+  exportarVehículos: () => downloadFile('/exportar/vehiculos.xls', 'vehiculos.xls'),
   descargarRespaldoMensual: (month) => downloadFile(`/exportar/mensual.zip?month=${encodeURIComponent(month)}`, `respaldo-${month}.zip`),
   limpiarRespaldoMensual: (month) => request(`/exportar/mensual?month=${encodeURIComponent(month)}`, { method: 'DELETE' })
 };

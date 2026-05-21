@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { config } from './config.js';
 
 const { Pool } = pg;
@@ -11,6 +12,8 @@ export const pool = new Pool({
   connectionString: config.databaseUrl,
   ssl: config.databaseSsl ? { rejectUnauthorized: false } : false
 });
+
+const dbContext = new AsyncLocalStorage();
 
 function normalizeParams(params = []) {
   const values = Array.isArray(params) ? params : params && typeof params === 'object' ? Object.values(params) : [];
@@ -129,7 +132,8 @@ function withReturningId(text) {
 
 export async function all(sqlText, params = []) {
   const query = sql(sqlText, params);
-  const result = await pool.query(query.text, query.values);
+  const client = dbContext.getStore()?.client || pool;
+  const result = await client.query(query.text, query.values);
   return result.rows;
 }
 
@@ -140,7 +144,8 @@ export async function get(sqlText, params = []) {
 
 export async function run(sqlText, params = []) {
   const query = sql(sqlText, params);
-  const result = await pool.query(withReturningId(query.text), query.values);
+  const client = dbContext.getStore()?.client || pool;
+  const result = await client.query(withReturningId(query.text), query.values);
   return {
     rowCount: result.rowCount,
     changes: result.rowCount,
@@ -150,8 +155,40 @@ export async function run(sqlText, params = []) {
 }
 
 export async function transaction(fn) {
+  const currentClient = dbContext.getStore()?.client;
+  if (currentClient) {
+    const savepoint = `sp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+    await currentClient.query(`SAVEPOINT ${savepoint}`);
+    const tx = buildClientApi(currentClient);
+    try {
+      const result = await fn(tx);
+      await currentClient.query(`RELEASE SAVEPOINT ${savepoint}`);
+      return result;
+    } catch (error) {
+      await currentClient.query(`ROLLBACK TO SAVEPOINT ${savepoint}`);
+      await currentClient.query(`RELEASE SAVEPOINT ${savepoint}`);
+      throw error;
+    }
+  }
+
   const client = await pool.connect();
-  const tx = {
+  const tx = buildClientApi(client);
+
+  try {
+    await client.query('BEGIN');
+    const result = await fn(tx);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+function buildClientApi(client) {
+  return {
     all: async (sqlText, params = []) => {
       const query = sql(sqlText, params);
       const result = await client.query(query.text, query.values);
@@ -173,16 +210,31 @@ export async function transaction(fn) {
       };
     }
   };
+}
 
-  try {
-    await client.query('BEGIN');
-    const result = await fn(tx);
-    await client.query('COMMIT');
-    return result;
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
+export async function beginRlsRequest(userId) {
+  const numericUserId = Number(userId);
+  if (!Number.isSafeInteger(numericUserId) || numericUserId <= 0) {
+    throw new Error('Usuario RLS no valido');
   }
+
+  const client = await pool.connect();
+  let closed = false;
+  await client.query('BEGIN');
+  await client.query('SELECT set_config($1, $2, true)', [config.rlsAppSetting, String(numericUserId)]);
+
+  return {
+    run(fn) {
+      return dbContext.run({ client, userId: numericUserId }, fn);
+    },
+    async finish(commit = true) {
+      if (closed) return;
+      closed = true;
+      try {
+        await client.query(commit ? 'COMMIT' : 'ROLLBACK');
+      } finally {
+        client.release();
+      }
+    }
+  };
 }

@@ -6,7 +6,18 @@ import { all, get, run } from '../db.js';
 import { authRequired, requireRole } from '../middleware/auth.js';
 import { audit } from '../audit.js';
 import { userSchema } from '../validators.js';
-import { cookieOptions, expiresInMinutes, hashToken, normalizeIp, normalizeUserAgent, randomToken, verifyTotp } from '../security.js';
+import {
+  cookieOptions,
+  expiresInMinutes,
+  hashToken,
+  isMfaRequired,
+  normalizeIp,
+  normalizeUserAgent,
+  randomToken,
+  sessionFingerprint,
+  verifyCaptcha,
+  verifyTotp
+} from '../security.js';
 
 export const authRouter = Router();
 
@@ -15,7 +26,7 @@ const loginLimiter = rateLimit({
   limit: 20,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { message: 'Demasiados intentos. Intenta más tarde.' }
+  message: { message: 'Demasiados intentos. Intenta mas tarde.' }
 });
 
 const sensitiveLimiter = rateLimit({
@@ -25,22 +36,34 @@ const sensitiveLimiter = rateLimit({
   legacyHeaders: false
 });
 
-authRouter.post('/login', loginLimiter, async (req, res) => {
-  const { email, password } = req.body;
-  const user = await get(
+async function findActiveUser(email) {
+  return get(
     `SELECT u.*, r.nombre AS role FROM usuarios u JOIN roles r ON r.id = u.role_id
      WHERE lower(u.email) = lower(?) AND u.activo = true`,
     [email]
   );
-  const genericMessage = 'Credenciales inválidas';
+}
+
+async function requireCaptcha(req, res) {
+  const captcha = await verifyCaptcha(req);
+  if (captcha.ok) return true;
+  await audit(req, 'captcha_fallido', 'auth', null, { provider: config.captchaProvider || 'none', reason: captcha.reason });
+  res.status(403).json({ message: 'Verificacion anti-bot requerida', requiresCaptcha: true });
+  return false;
+}
+
+authRouter.post('/login', loginLimiter, async (req, res) => {
+  if (!(await requireCaptcha(req, res))) return;
+
+  const { email, password } = req.body;
+  const user = await findActiveUser(email);
+  const genericMessage = 'Credenciales invalidas';
+
   if (user?.locked_until && new Date(user.locked_until) > new Date()) {
     await audit({ ...req, user: { id: user.id } }, 'login_bloqueado', 'usuarios', user.id);
     return res.status(401).json({ message: genericMessage });
   }
-  if (user && Number(user.failed_login_attempts || 0) >= 3 && config.captchaToken && req.get('x-captcha-token') !== config.captchaToken) {
-    await audit({ ...req, user: { id: user.id } }, 'captcha_requerido', 'usuarios', user.id);
-    return res.status(403).json({ message: 'Verificación adicional requerida', requiresCaptcha: true });
-  }
+
   if (!user || !(await bcrypt.compare(password || '', user.password_hash))) {
     if (user) {
       const attempts = Number(user.failed_login_attempts || 0) + 1;
@@ -52,7 +75,16 @@ authRouter.post('/login', loginLimiter, async (req, res) => {
     }
     return res.status(401).json({ message: genericMessage });
   }
-  if (user.mfa_enabled && !verifyTotp(user.mfa_secret, req.body.mfa_code)) {
+
+  if (isMfaRequired(user.role) && !user.mfa_enabled) {
+    await audit({ ...req, user }, 'mfa_obligatorio_sin_configurar', 'usuarios', user.id, { role: user.role });
+    return res.status(403).json({
+      message: 'MFA obligatorio para administradores. Configuralo antes de iniciar sesion.',
+      requiresMfaSetup: true
+    });
+  }
+
+  if ((user.mfa_enabled || isMfaRequired(user.role)) && !verifyTotp(user.mfa_secret, req.body.mfa_code)) {
     await audit({ ...req, user }, 'mfa_fallido', 'usuarios', user.id);
     return res.status(401).json({ message: genericMessage, requiresMfa: true });
   }
@@ -60,14 +92,45 @@ authRouter.post('/login', loginLimiter, async (req, res) => {
   const token = randomToken();
   await run('UPDATE sesiones SET revoked_at = CURRENT_TIMESTAMP WHERE usuario_id = ? AND expires_at <= CURRENT_TIMESTAMP AND revoked_at IS NULL', [user.id]);
   const session = await run(
-    `INSERT INTO sesiones (usuario_id, token_hash, ip, user_agent, expires_at)
-     VALUES (?, ?, ?, ?, ?)`,
-    [user.id, hashToken(token), normalizeIp(req), normalizeUserAgent(req), expiresInMinutes(config.sessionMinutes)]
+    `INSERT INTO sesiones (usuario_id, token_hash, ip, user_agent, fingerprint, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [user.id, hashToken(token), normalizeIp(req), normalizeUserAgent(req), sessionFingerprint(req), expiresInMinutes(config.sessionMinutes)]
   );
   res.cookie('pv_session', token, cookieOptions(config.sessionMinutes * 60 * 1000));
   await run('UPDATE usuarios SET ultimo_acceso = CURRENT_TIMESTAMP, failed_login_attempts = 0, locked_until = NULL WHERE id = ?', [user.id]);
   await audit({ ...req, user }, 'login', 'usuarios', user.id, { sessionId: session.lastInsertRowid });
   res.json({ id: user.id, nombre: user.nombre, email: user.email, role: user.role, department_id: user.department_id, sessionToken: token });
+});
+
+authRouter.post('/mfa/bootstrap', sensitiveLimiter, async (req, res) => {
+  if (!(await requireCaptcha(req, res))) return;
+
+  const { email, password } = req.body;
+  const user = await findActiveUser(email);
+  if (!user || !isMfaRequired(user.role) || !(await bcrypt.compare(password || '', user.password_hash))) {
+    return res.status(401).json({ message: 'Credenciales invalidas' });
+  }
+  if (user.mfa_enabled) return res.status(409).json({ message: 'MFA ya esta configurado para este usuario' });
+
+  const secret = randomToken(20);
+  await run('UPDATE usuarios SET mfa_secret = ?, mfa_enabled = false WHERE id = ?', [secret, user.id]);
+  await audit({ ...req, user }, 'mfa_bootstrap', 'usuarios', user.id);
+  res.json({ secret });
+});
+
+authRouter.post('/mfa/bootstrap/enable', sensitiveLimiter, async (req, res) => {
+  if (!(await requireCaptcha(req, res))) return;
+
+  const { email, password, code } = req.body;
+  const user = await findActiveUser(email);
+  if (!user || !isMfaRequired(user.role) || !(await bcrypt.compare(password || '', user.password_hash))) {
+    return res.status(401).json({ message: 'Credenciales invalidas' });
+  }
+  if (!verifyTotp(user.mfa_secret, code)) return res.status(400).json({ message: 'Codigo MFA invalido' });
+
+  await run('UPDATE usuarios SET mfa_enabled = true WHERE id = ?', [user.id]);
+  await audit({ ...req, user }, 'mfa_enable_bootstrap', 'usuarios', user.id);
+  res.json({ ok: true });
 });
 
 authRouter.post('/logout', authRequired, async (req, res) => {
@@ -86,7 +149,7 @@ authRouter.get('/users', authRequired, requireRole('admin'), async (_req, res) =
 authRouter.post('/users', authRequired, requireRole('admin'), async (req, res) => {
   const data = userSchema.parse(req.body);
   const role = await get('SELECT id FROM roles WHERE nombre = ?', [data.role]);
-  if (!role) return res.status(400).json({ message: 'Rol no válido' });
+  if (!role) return res.status(400).json({ message: 'Rol no valido' });
   const hash = await bcrypt.hash(data.password, 12);
   const result = await run(
     'INSERT INTO usuarios (nombre, email, password_hash, role_id, department_id, activo) VALUES (?, ?, ?, ?, ?, ?)',
@@ -108,7 +171,7 @@ authRouter.patch('/users/:id/status', authRequired, requireRole('admin'), async 
 
 authRouter.patch('/users/:id/password', authRequired, requireRole('admin'), async (req, res) => {
   const password = String(req.body.password || '');
-  if (password.length < 8) return res.status(400).json({ message: 'La contraseña debe tener al menos 8 caracteres' });
+  if (password.length < 8) return res.status(400).json({ message: 'La contrasena debe tener al menos 8 caracteres' });
 
   const user = await get('SELECT id FROM usuarios WHERE id = ?', [req.params.id]);
   if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
@@ -121,6 +184,8 @@ authRouter.patch('/users/:id/password', authRequired, requireRole('admin'), asyn
 });
 
 authRouter.post('/password/request-reset', sensitiveLimiter, async (req, res) => {
+  if (!(await requireCaptcha(req, res))) return;
+
   const email = String(req.body.email || '').slice(0, 160);
   const user = await get('SELECT id FROM usuarios WHERE lower(email) = lower(?) AND activo = true', [email]);
   let devToken;
@@ -135,21 +200,23 @@ authRouter.post('/password/request-reset', sensitiveLimiter, async (req, res) =>
   }
   res.json({
     ok: true,
-    message: 'Si el correo existe, se generará un enlace temporal de recuperación.',
+    message: 'Si el correo existe, se generara un enlace temporal de recuperacion.',
     resetToken: process.env.NODE_ENV === 'production' ? undefined : devToken
   });
 });
 
 authRouter.post('/password/reset', sensitiveLimiter, async (req, res) => {
+  if (!(await requireCaptcha(req, res))) return;
+
   const tokenHash = hashToken(String(req.body.token || ''));
   const password = String(req.body.password || '');
-  if (password.length < 8) return res.status(400).json({ message: 'La contraseña debe tener al menos 8 caracteres' });
+  if (password.length < 8) return res.status(400).json({ message: 'La contrasena debe tener al menos 8 caracteres' });
   const reset = await get(
     `SELECT * FROM password_reset_tokens
      WHERE token_hash = ? AND used_at IS NULL AND expires_at > CURRENT_TIMESTAMP`,
     [tokenHash]
   );
-  if (!reset) return res.status(400).json({ message: 'Token inválido o expirado' });
+  if (!reset) return res.status(400).json({ message: 'Token invalido o expirado' });
   const hash = await bcrypt.hash(password, 12);
   await run('UPDATE usuarios SET password_hash = ?, failed_login_attempts = 0, locked_until = NULL WHERE id = ?', [hash, reset.usuario_id]);
   await run('UPDATE password_reset_tokens SET used_at = CURRENT_TIMESTAMP WHERE id = ?', [reset.id]);
@@ -169,12 +236,14 @@ authRouter.post('/email/request-verification', authRequired, sensitiveLimiter, a
 });
 
 authRouter.post('/email/verify', sensitiveLimiter, async (req, res) => {
+  if (!(await requireCaptcha(req, res))) return;
+
   const verification = await get(
     `SELECT * FROM email_verification_tokens
      WHERE token_hash = ? AND used_at IS NULL AND expires_at > CURRENT_TIMESTAMP`,
     [hashToken(String(req.body.token || ''))]
   );
-  if (!verification) return res.status(400).json({ message: 'Token inválido o expirado' });
+  if (!verification) return res.status(400).json({ message: 'Token invalido o expirado' });
   await run('UPDATE usuarios SET email_verified = true WHERE id = ?', [verification.usuario_id]);
   await run('UPDATE email_verification_tokens SET used_at = CURRENT_TIMESTAMP WHERE id = ?', [verification.id]);
   await audit({ ...req, user: { id: verification.usuario_id } }, 'verificar_email', 'usuarios', verification.usuario_id);
@@ -190,7 +259,7 @@ authRouter.post('/mfa/setup', authRequired, requireRole('admin'), async (req, re
 
 authRouter.post('/mfa/enable', authRequired, requireRole('admin'), async (req, res) => {
   const user = await get('SELECT mfa_secret FROM usuarios WHERE id = ?', [req.user.id]);
-  if (!verifyTotp(user?.mfa_secret, req.body.code)) return res.status(400).json({ message: 'Código MFA inválido' });
+  if (!verifyTotp(user?.mfa_secret, req.body.code)) return res.status(400).json({ message: 'Codigo MFA invalido' });
   await run('UPDATE usuarios SET mfa_enabled = true WHERE id = ?', [req.user.id]);
   await audit(req, 'mfa_enable', 'usuarios', req.user.id);
   res.json({ ok: true });
@@ -199,7 +268,7 @@ authRouter.post('/mfa/enable', authRequired, requireRole('admin'), async (req, r
 async function getUsers() {
   return all(
     `SELECT u.id, u.nombre, u.email, u.department_id, d.nombre AS departamento, r.nombre AS role,
-            u.activo, u.ultimo_acceso, u.failed_login_attempts, u.locked_until, u.created_at
+            u.activo, u.ultimo_acceso, u.failed_login_attempts, u.locked_until, u.created_at, u.mfa_enabled
      FROM usuarios u
      JOIN roles r ON r.id = u.role_id
      LEFT JOIN departamentos d ON d.id = u.department_id

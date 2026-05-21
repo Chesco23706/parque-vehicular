@@ -129,15 +129,104 @@ function localMonthInput(date = new Date()) {
 function Login({ onLogin }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [mfaCode, setMfaCode] = useState('');
+  const [captcha, setCaptcha] = useState({ captchaProvider: null, captchaSiteKey: null, captchaRequired: false });
+  const [captchaToken, setCaptchaToken] = useState('');
+  const [mfaSecret, setMfaSecret] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    api.securityConfig().then((settings) => {
+      if (active) setCaptcha(settings);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!captcha.captchaProvider || !captcha.captchaSiteKey) return;
+    const src = captcha.captchaProvider === 'turnstile'
+      ? 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'
+      : 'https://www.google.com/recaptcha/api.js?render=explicit';
+    if (!document.querySelector(`script[src="${src}"]`)) {
+      const script = document.createElement('script');
+      script.src = src;
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    }
+  }, [captcha.captchaProvider, captcha.captchaSiteKey]);
+
+  useEffect(() => {
+    if (!captcha.captchaProvider || !captcha.captchaSiteKey) return undefined;
+    const container = document.getElementById('captcha-widget');
+    if (!container) return undefined;
+    container.innerHTML = '';
+    setCaptchaToken('');
+    let cancelled = false;
+    let widgetId = null;
+    const timer = setInterval(() => {
+      if (cancelled) return;
+      if (captcha.captchaProvider === 'turnstile' && window.turnstile) {
+        clearInterval(timer);
+        widgetId = window.turnstile.render(container, {
+          sitekey: captcha.captchaSiteKey,
+          callback: setCaptchaToken,
+          'expired-callback': () => setCaptchaToken('')
+        });
+      }
+      if (captcha.captchaProvider === 'recaptcha' && window.grecaptcha?.render) {
+        clearInterval(timer);
+        widgetId = window.grecaptcha.render(container, {
+          sitekey: captcha.captchaSiteKey,
+          callback: setCaptchaToken,
+          'expired-callback': () => setCaptchaToken('')
+        });
+      }
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      if (captcha.captchaProvider === 'turnstile' && window.turnstile && widgetId !== null) window.turnstile.remove(widgetId);
+    };
+  }, [captcha.captchaProvider, captcha.captchaSiteKey]);
 
   async function submit(event) {
     event.preventDefault();
     setBusy(true);
     setError('');
+    setMfaSecret('');
     try {
-      onLogin(await api.login({ email, password }));
+      onLogin(await api.login({ email, password, mfa_code: mfaCode, captchaToken }));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function setupMfa() {
+    setBusy(true);
+    setError('');
+    setMfaSecret('');
+    try {
+      const result = await api.bootstrapMfa({ email, password, captchaToken });
+      setMfaSecret(result.secret);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function enableMfa() {
+    setBusy(true);
+    setError('');
+    try {
+      await api.enableBootstrapMfa({ email, password, code: mfaCode, captchaToken });
+      setMfaSecret('');
+      setError('MFA habilitado. Ingresa de nuevo con tu codigo.');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -169,7 +258,12 @@ function Login({ onLogin }) {
           <h2>Iniciar sesión</h2>
           <label>Correo<input value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="username" /></label>
           <label>Contraseña<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" /></label>
+          <label>Codigo MFA<input value={mfaCode} onChange={(event) => setMfaCode(event.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" placeholder="6 digitos" /></label>
+          {captcha.captchaProvider && captcha.captchaSiteKey && <div id="captcha-widget" className="captcha-widget" />}
+          {mfaSecret && <p className="success">Secreto MFA: {mfaSecret}. Agregalo a tu app autenticadora, captura el codigo de 6 digitos y habilitalo.</p>}
           {error && <p className="error">{error}</p>}
+          {error.includes('MFA obligatorio') && <button type="button" onClick={setupMfa} disabled={busy}>Generar secreto MFA</button>}
+          {mfaSecret && <button type="button" onClick={enableMfa} disabled={busy || mfaCode.length !== 6}>Habilitar MFA</button>}
           <button className="primary" disabled={busy}>{busy ? <Loader2 className="spin" /> : <ShieldCheck />} Entrar</button>
         </form>
       </section>
@@ -263,8 +357,8 @@ function Vehicles({ data, departments, role, refresh }) {
     setSaving(true);
     setVehicleError('');
     try {
-      if (editingId) await api.editarVehículo(editingId, form);
-      else await api.crearVehículo(form);
+      if (editingId) await api.editarVehiculo(editingId, form);
+      else await api.crearVehiculo(form);
       setOpen(false);
       setEditingId(null);
       setForm({ ...blankVehicle, department_id: departments[0]?.id || '' });
@@ -309,7 +403,7 @@ function Vehicles({ data, departments, role, refresh }) {
     if (!ok) return;
     setVehicleError('');
     try {
-      await api.eliminarVehículo(vehicle.id);
+      await api.eliminarVehiculo(vehicle.id);
       await refresh('vehiculos', true);
       await refresh('checklist', true);
       await refresh('dashboard', true);
@@ -1436,7 +1530,7 @@ function App() {
           {visibleTabs.map(({ id, label, icon: Icon }) => (
             <button key={id} className={tab === id ? 'active' : ''} onClick={() => setTab(id)}><Icon /> {label}</button>
           ))}
-          <button className="download" onClick={() => api.exportarVehículos()}><FileDown /> Excel</button>
+          <button className="download" onClick={() => api.exportarVehiculos()}><FileDown /> Excel</button>
         </nav>
       </aside>
       <main>

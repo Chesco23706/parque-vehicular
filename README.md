@@ -50,6 +50,12 @@ Backend:
 - `FRONTEND_ORIGINS`
 - `COOKIE_SECURE`
 - `REQUIRE_HTTPS`
+- `CAPTCHA_PROVIDER`
+- `CAPTCHA_SITE_KEY`
+- `CAPTCHA_SECRET_KEY`
+- `MFA_REQUIRED_ROLES`
+- `ALERT_WEBHOOK_URL`
+- `BACKUP_BUCKET`
 
 Frontend:
 
@@ -77,6 +83,19 @@ Contraseña demo: `Parque2026!`
 - Bitácora de actividad.
 - Restricción de tipo y tamaño en archivos.
 - Storage privado en Supabase.
+- Captcha real configurable con Cloudflare Turnstile o reCAPTCHA.
+- MFA obligatorio para administradores.
+- Alertas por webhook para eventos criticos.
+- Contexto RLS por request con rol PostgreSQL limitado.
+- Scripts de pentesting basico, escaneo de secretos y backups con retencion.
+
+## Operacion de seguridad
+
+- `npm run backup`: genera respaldo PostgreSQL y lo sube a Supabase Storage.
+- `npm run security:smoke`: ejecuta pruebas basicas de seguridad contra la API.
+- `npm run security:secrets`: busca posibles secretos en archivos versionables.
+
+La guia completa esta en `docs/security-hardening.md`.
 
 ## Despliegue sugerido
 

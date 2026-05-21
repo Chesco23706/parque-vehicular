@@ -90,6 +90,7 @@ input, select, textarea {
 textarea { min-height: 96px; resize: vertical; grid-column: 1 / -1; }
 .hint { color: #7b704d; font-size: 0.93rem; }
 .error { background: #fff1f1; color: #a51220; padding: 12px; border-radius: 8px; border: 1px solid #ffc9c9; }
+.captcha-widget { min-height: 65px; display: flex; align-items: center; }
 
 .app {
   min-height: 100vh;

@@ -21,6 +21,20 @@ export const config = {
   cookieSecure: process.env.COOKIE_SECURE === 'true' || process.env.NODE_ENV === 'production',
   requireHttps: process.env.REQUIRE_HTTPS === 'true' || process.env.NODE_ENV === 'production',
   captchaToken: process.env.CAPTCHA_TOKEN || '',
-  passwordResetMinutes: Number(process.env.PASSWORD_RESET_MINUTES || 20)
+  captchaProvider: (process.env.CAPTCHA_PROVIDER || '').toLowerCase(),
+  captchaSecretKey: process.env.CAPTCHA_SECRET_KEY || '',
+  captchaSiteKey: process.env.CAPTCHA_SITE_KEY || '',
+  captchaRequired: process.env.CAPTCHA_REQUIRED === 'true' || process.env.NODE_ENV === 'production',
+  passwordResetMinutes: Number(process.env.PASSWORD_RESET_MINUTES || 20),
+  mfaRequiredRoles: (process.env.MFA_REQUIRED_ROLES || 'admin')
+    .split(',')
+    .map((role) => role.trim())
+    .filter(Boolean),
+  alertWebhookUrl: process.env.ALERT_WEBHOOK_URL || '',
+  alertMinLevel: process.env.ALERT_MIN_LEVEL || 'high',
+  maxIpChangesPerSession: Number(process.env.MAX_IP_CHANGES_PER_SESSION || 2),
+  maxSuspiciousSessionsPerUser: Number(process.env.MAX_SUSPICIOUS_SESSIONS_PER_USER || 3),
+  backupBucket: process.env.BACKUP_BUCKET || 'backups',
+  rlsAppSetting: process.env.RLS_APP_SETTING || 'app.current_user_id'
 };
 

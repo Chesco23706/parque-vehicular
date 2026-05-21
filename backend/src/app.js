@@ -18,6 +18,7 @@ import { exportsRouter } from './routes/exports.js';
 import { auditRouter } from './routes/audit.js';
 import { repairsRouter } from './routes/repairs.js';
 import { budgetRouter } from './routes/budget.js';
+import { audit } from './audit.js';
 
 await migrate();
 
@@ -41,10 +42,11 @@ app.use(helmet({
     useDefaults: true,
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'"],
+      scriptSrc: ["'self'", 'https://challenges.cloudflare.com', 'https://www.google.com', 'https://www.gstatic.com'],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", 'data:', 'blob:'],
-      connectSrc: ["'self'", ...config.frontendOrigins, 'http://localhost:4000', 'http://127.0.0.1:4000'],
+      connectSrc: ["'self'", ...config.frontendOrigins, 'http://localhost:4000', 'http://127.0.0.1:4000', 'https://challenges.cloudflare.com', 'https://www.google.com'],
+      frameSrc: ["'self'", 'https://challenges.cloudflare.com', 'https://www.google.com'],
       objectSrc: ["'none'"],
       frameAncestors: ["'none'"],
       baseUri: ["'self'"],
@@ -67,7 +69,22 @@ app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(csrf);
 
-app.get('/api/health', (_req, res) => res.json({ ok: true, version: config.appVersion }));
+app.get('/api/health', (_req, res) => res.json({
+  ok: true,
+  version: config.appVersion,
+  security: {
+    captchaProvider: config.captchaProvider || null,
+    captchaConfigured: Boolean(config.captchaSecretKey),
+    captchaRequired: config.captchaRequired,
+    mfaRequiredRoles: config.mfaRequiredRoles,
+    alertsConfigured: Boolean(config.alertWebhookUrl)
+  }
+}));
+app.get('/api/security/config', (_req, res) => res.json({
+  captchaProvider: config.captchaProvider || null,
+  captchaSiteKey: config.captchaSiteKey || null,
+  captchaRequired: config.captchaRequired
+}));
 app.get('/api/csrf', (_req, res) => res.json({ csrfToken: res.locals.csrfToken }));
 app.use('/api/auth', authRouter);
 app.use('/api/meta', metaRouter);
@@ -81,7 +98,7 @@ app.use('/api/auditoria', auditRouter);
 app.use('/api/reparaciones', repairsRouter);
 app.use('/api/presupuesto', budgetRouter);
 
-app.use((err, _req, res, _next) => {
+app.use(async (err, req, res, _next) => {
   if (err instanceof ZodError) return res.status(400).json({ message: 'Datos inválidos', issues: err.issues });
   if (err?.type === 'entity.parse.failed') return res.status(400).json({ message: 'JSON inválido' });
   if (err?.code === 'LIMIT_FILE_COUNT') return res.status(400).json({ message: 'Puedes subir máximo 5 evidencias por reporte' });
@@ -91,6 +108,7 @@ app.use((err, _req, res, _next) => {
   if (err?.message?.includes('archivo')) return res.status(400).json({ message: err.message });
   if (err?.message === 'Taller no encontrado') return res.status(404).json({ message: err.message });
   console.error(err);
+  await audit(req, 'error_servidor', 'server', null, { message: err.message, path: req.originalUrl }).catch(() => {});
   res.status(500).json({ message: 'Error interno del servidor' });
 });
 
