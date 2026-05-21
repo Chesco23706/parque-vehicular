@@ -19,6 +19,7 @@ import { auditRouter } from './routes/audit.js';
 import { repairsRouter } from './routes/repairs.js';
 import { budgetRouter } from './routes/budget.js';
 import { audit } from './audit.js';
+import { databaseStatus } from './db.js';
 
 await migrate();
 
@@ -77,7 +78,8 @@ app.get('/api/health', (_req, res) => res.json({
     captchaConfigured: Boolean(config.captchaSecretKey),
     captchaRequired: config.captchaRequired,
     mfaRequiredRoles: config.mfaRequiredRoles,
-    alertsConfigured: Boolean(config.alertWebhookUrl)
+    alertsConfigured: Boolean(config.alertWebhookUrl),
+    database: databaseStatus()
   }
 }));
 app.get('/api/security/config', (_req, res) => res.json({

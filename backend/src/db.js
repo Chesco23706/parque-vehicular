@@ -4,14 +4,12 @@ import { config } from './config.js';
 
 const { Pool } = pg;
 
-if (!config.databaseUrl) {
-  throw new Error('Falta DATABASE_URL para conectar PostgreSQL/Supabase');
-}
-
-export const pool = new Pool({
-  connectionString: config.databaseUrl,
-  ssl: config.databaseSsl ? { rejectUnauthorized: false } : false
-});
+export const pool = config.databaseUrl
+  ? new Pool({
+      connectionString: config.databaseUrl,
+      ssl: config.databaseSsl ? { rejectUnauthorized: false } : false
+    })
+  : null;
 
 const dbContext = new AsyncLocalStorage();
 
@@ -132,7 +130,7 @@ function withReturningId(text) {
 
 export async function all(sqlText, params = []) {
   const query = sql(sqlText, params);
-  const client = dbContext.getStore()?.client || pool;
+  const client = dbContext.getStore()?.client || requirePool();
   const result = await client.query(query.text, query.values);
   return result.rows;
 }
@@ -144,7 +142,7 @@ export async function get(sqlText, params = []) {
 
 export async function run(sqlText, params = []) {
   const query = sql(sqlText, params);
-  const client = dbContext.getStore()?.client || pool;
+  const client = dbContext.getStore()?.client || requirePool();
   const result = await client.query(withReturningId(query.text), query.values);
   return {
     rowCount: result.rowCount,
@@ -171,7 +169,7 @@ export async function transaction(fn) {
     }
   }
 
-  const client = await pool.connect();
+  const client = await requirePool().connect();
   const tx = buildClientApi(client);
 
   try {
@@ -212,13 +210,27 @@ function buildClientApi(client) {
   };
 }
 
+export function databaseStatus() {
+  return {
+    configured: Boolean(config.databaseUrl),
+    ssl: config.databaseSsl,
+    rlsSetting: config.rlsAppSetting,
+    migrationsEnabled: config.runMigrations
+  };
+}
+
+function requirePool() {
+  if (!pool) throw new Error('Falta DATABASE_URL para conectar PostgreSQL/Supabase');
+  return pool;
+}
+
 export async function beginRlsRequest(userId) {
   const numericUserId = Number(userId);
   if (!Number.isSafeInteger(numericUserId) || numericUserId <= 0) {
     throw new Error('Usuario RLS no valido');
   }
 
-  const client = await pool.connect();
+  const client = await requirePool().connect();
   let closed = false;
   await client.query('BEGIN');
   await client.query('SELECT set_config($1, $2, true)', [config.rlsAppSetting, String(numericUserId)]);
