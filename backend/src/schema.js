@@ -1,4 +1,5 @@
 import { run } from './db.js';
+import { config } from './config.js';
 
 const migrations = [
   `ALTER TABLE sesiones ADD COLUMN IF NOT EXISTS fingerprint TEXT`,
@@ -11,6 +12,7 @@ const migrations = [
 ];
 
 export async function migrate() {
+  if (!config.runMigrations) return false;
   for (const statement of migrations) {
     await run(statement);
   }

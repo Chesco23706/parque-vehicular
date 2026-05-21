@@ -35,6 +35,7 @@ export const config = {
   maxIpChangesPerSession: Number(process.env.MAX_IP_CHANGES_PER_SESSION || 2),
   maxSuspiciousSessionsPerUser: Number(process.env.MAX_SUSPICIOUS_SESSIONS_PER_USER || 3),
   backupBucket: process.env.BACKUP_BUCKET || 'backups',
-  rlsAppSetting: process.env.RLS_APP_SETTING || 'app.current_user_id'
+  rlsAppSetting: process.env.RLS_APP_SETTING || 'app.current_user_id',
+  runMigrations: process.env.RUN_MIGRATIONS === 'true' || (process.env.NODE_ENV !== 'production' && process.env.RUN_MIGRATIONS !== 'false')
 };
 

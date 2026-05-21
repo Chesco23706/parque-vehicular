@@ -83,9 +83,11 @@ backend/sql/rls-policies.sql
 Modo empresarial recomendado:
 
 1. Ejecuta `backend/sql/app-api-role.sql` en Supabase, cambiando la contrasena.
-2. Ejecuta `backend/sql/rls-policies.sql`.
-3. Cambia `DATABASE_URL` para usar `app_api`, no `postgres`.
-4. Conserva `SUPABASE_SERVICE_ROLE_KEY` solo para Storage/backups desde backend.
-5. Verifica que cada request autenticado define `app.current_user_id`. El backend ya lo hace en `authRequired` con una transaccion por request.
+2. Ejecuta `backend/sql/runtime-migrations.sql`.
+3. Ejecuta `backend/sql/rls-policies.sql`.
+4. Cambia `DATABASE_URL` para usar `app_api`, no `postgres`.
+5. Define `RUN_MIGRATIONS=false` en produccion.
+6. Conserva `SUPABASE_SERVICE_ROLE_KEY` solo para Storage/backups desde backend.
+7. Verifica que cada request autenticado define `app.current_user_id`. El backend ya lo hace en `authRequired` con una transaccion por request.
 
 Nota: `service_role` y roles con `BYPASSRLS` saltan RLS. No uses esos roles para `DATABASE_URL` normal.
