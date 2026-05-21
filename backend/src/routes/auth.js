@@ -9,6 +9,7 @@ import { userSchema } from '../validators.js';
 import {
   cookieOptions,
   expiresInMinutes,
+  generateTotpSecret,
   hashToken,
   isMfaRequired,
   normalizeIp,
@@ -112,7 +113,7 @@ authRouter.post('/mfa/bootstrap', sensitiveLimiter, async (req, res) => {
   }
   if (user.mfa_enabled) return res.status(409).json({ message: 'MFA ya esta configurado para este usuario' });
 
-  const secret = randomToken(20);
+  const secret = generateTotpSecret();
   await run('UPDATE usuarios SET mfa_secret = ?, mfa_enabled = false WHERE id = ?', [secret, user.id]);
   await audit({ ...req, user }, 'mfa_bootstrap', 'usuarios', user.id);
   res.json({ secret });
@@ -251,7 +252,7 @@ authRouter.post('/email/verify', sensitiveLimiter, async (req, res) => {
 });
 
 authRouter.post('/mfa/setup', authRequired, requireRole('admin'), async (req, res) => {
-  const secret = randomToken(20);
+  const secret = generateTotpSecret();
   await run('UPDATE usuarios SET mfa_secret = ?, mfa_enabled = false WHERE id = ?', [secret, req.user.id]);
   await audit(req, 'mfa_setup', 'usuarios', req.user.id);
   res.json({ secret });
