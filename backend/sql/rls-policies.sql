@@ -4,6 +4,7 @@
 -- antes de consultar con un rol NO service_role.
 
 alter table vehiculos enable row level security;
+alter table departamentos enable row level security;
 alter table reportes_fallas enable row level security;
 alter table checklist_diario enable row level security;
 alter table reparaciones enable row level security;
@@ -35,6 +36,11 @@ create policy vehiculos_por_rol on vehiculos
 for all
 using (app_user_role() = 'admin' or department_id = app_user_department())
 with check (app_user_role() = 'admin' or department_id = app_user_department());
+
+drop policy if exists departamentos_por_rol on departamentos;
+create policy departamentos_por_rol on departamentos
+for select
+using (app_user_role() = 'admin' or id = app_user_department());
 
 drop policy if exists reportes_por_rol on reportes_fallas;
 create policy reportes_por_rol on reportes_fallas
