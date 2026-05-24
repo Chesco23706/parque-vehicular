@@ -61,7 +61,7 @@ Frontend:
 
 - `VITE_API_URL`
 
-## Usuarios demo
+## Usuarios de prueba
 
 - `admin@parque.local`
 - `policia@parque.local`
@@ -69,7 +69,7 @@ Frontend:
 - `agua@parque.local`
 - `logistica@parque.local`
 
-Contraseña demo: `Parque2026!`
+Las contraseñas de prueba deben entregarse por un canal privado y cambiarse antes de compartir una demo con terceros.
 
 ## Seguridad incluida
 
@@ -95,7 +95,9 @@ Contraseña demo: `Parque2026!`
 - `npm run security:smoke`: ejecuta pruebas basicas de seguridad contra la API.
 - `npm run security:secrets`: busca posibles secretos en archivos versionables.
 
-La guia completa esta en `docs/security-hardening.md`.
+La guía completa está en `docs/security-hardening.md`.
+
+Para publicar una demo cerrada, usa también `docs/production-demo-checklist.md`.
 
 ## Despliegue sugerido
 

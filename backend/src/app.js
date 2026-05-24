@@ -20,6 +20,7 @@ import { repairsRouter } from './routes/repairs.js';
 import { budgetRouter } from './routes/budget.js';
 import { audit } from './audit.js';
 import { databaseStatus } from './db.js';
+import { authRequired, requireRole } from './middleware/auth.js';
 
 await migrate();
 
@@ -70,7 +71,17 @@ app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(csrf);
 
+app.get('/', (_req, res) => res.json({
+  name: 'Sistema de control de unidades',
+  status: 'online',
+  version: config.appVersion,
+  health: '/api/health'
+}));
 app.get('/api/health', (_req, res) => res.json({
+  ok: true,
+  version: config.appVersion
+}));
+app.get('/api/admin/health/details', authRequired, requireRole('admin'), (_req, res) => res.json({
   ok: true,
   version: config.appVersion,
   security: {
