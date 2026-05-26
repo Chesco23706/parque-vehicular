@@ -53,7 +53,9 @@ async function main() {
   const hash = await bcrypt.hash('Parque2026!', 12);
 
   const users = [
-    ['Administrador Parque', 'admin@parque.local', hash, adminRole.id, parque.id],
+    ['Sergio', 'admin@parque.local', hash, adminRole.id, parque.id],
+    ['Melissa', 'melissa@parque.local', hash, adminRole.id, parque.id],
+    ['Pilar', 'pilar@parque.local', hash, adminRole.id, parque.id],
     ['Policia Municipal', 'policia@parque.local', hash, deptRole.id, policia.id],
     ['Servicios Publicos', 'servicios@parque.local', hash, deptRole.id, servicios.id],
     ['Logistica', 'logistica@parque.local', hash, deptRole.id, logistica.id],
