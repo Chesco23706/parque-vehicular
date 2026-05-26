@@ -132,9 +132,18 @@ function Login({ onLogin }) {
   const [mfaCode, setMfaCode] = useState('');
   const [captcha, setCaptcha] = useState({ captchaProvider: null, captchaSiteKey: null, captchaRequired: false });
   const [captchaToken, setCaptchaToken] = useState('');
+  const [captchaResetKey, setCaptchaResetKey] = useState(0);
   const [mfaSecret, setMfaSecret] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const captchaEnabled = Boolean(captcha.captchaProvider && captcha.captchaSiteKey);
+  const captchaMissing = captchaEnabled && !captchaToken;
+
+  function resetCaptcha() {
+    if (!captchaEnabled) return;
+    setCaptchaToken('');
+    setCaptchaResetKey((current) => current + 1);
+  }
 
   useEffect(() => {
     let active = true;
@@ -190,10 +199,14 @@ function Login({ onLogin }) {
       clearInterval(timer);
       if (captcha.captchaProvider === 'turnstile' && window.turnstile && widgetId !== null) window.turnstile.remove(widgetId);
     };
-  }, [captcha.captchaProvider, captcha.captchaSiteKey]);
+  }, [captcha.captchaProvider, captcha.captchaSiteKey, captchaResetKey]);
 
   async function submit(event) {
     event.preventDefault();
+    if (captchaMissing) {
+      setError('Completa la verificacion anti-bot.');
+      return;
+    }
     setBusy(true);
     setError('');
     setMfaSecret('');
@@ -202,11 +215,16 @@ function Login({ onLogin }) {
     } catch (err) {
       setError(err.message);
     } finally {
+      resetCaptcha();
       setBusy(false);
     }
   }
 
   async function setupMfa() {
+    if (captchaMissing) {
+      setError('Completa la verificacion anti-bot nuevamente para generar el secreto MFA.');
+      return;
+    }
     setBusy(true);
     setError('');
     setMfaSecret('');
@@ -216,11 +234,16 @@ function Login({ onLogin }) {
     } catch (err) {
       setError(err.message);
     } finally {
+      resetCaptcha();
       setBusy(false);
     }
   }
 
   async function enableMfa() {
+    if (captchaMissing) {
+      setError('Completa la verificacion anti-bot nuevamente para habilitar MFA.');
+      return;
+    }
     setBusy(true);
     setError('');
     try {
@@ -230,6 +253,7 @@ function Login({ onLogin }) {
     } catch (err) {
       setError(err.message);
     } finally {
+      resetCaptcha();
       setBusy(false);
     }
   }
@@ -259,12 +283,12 @@ function Login({ onLogin }) {
           <label>Correo<input value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="username" /></label>
           <label>Contraseña<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" /></label>
           <label>Codigo MFA<input value={mfaCode} onChange={(event) => setMfaCode(event.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" placeholder="6 digitos" /></label>
-          {captcha.captchaProvider && captcha.captchaSiteKey && <div id="captcha-widget" className="captcha-widget" />}
-          {mfaSecret && <p className="success">Secreto MFA: {mfaSecret}. Agregalo a tu app autenticadora, captura el codigo de 6 digitos y habilitalo.</p>}
+          {captchaEnabled && <div id="captcha-widget" key={captchaResetKey} className="captcha-widget" />}
+          {mfaSecret && <p className="success">Secreto MFA: {mfaSecret}. Agregalo a tu app autenticadora, resuelve el captcha otra vez, captura el codigo de 6 digitos y habilitalo.</p>}
           {error && <p className="error">{error}</p>}
-          {error.includes('MFA obligatorio') && <button type="button" onClick={setupMfa} disabled={busy}>Generar secreto MFA</button>}
-          {mfaSecret && <button type="button" onClick={enableMfa} disabled={busy || mfaCode.length !== 6}>Habilitar MFA</button>}
-          <button className="primary" disabled={busy}>{busy ? <Loader2 className="spin" /> : <ShieldCheck />} Entrar</button>
+          {error.includes('MFA obligatorio') && <button type="button" onClick={setupMfa} disabled={busy || captchaMissing}>Generar secreto MFA</button>}
+          {mfaSecret && <button type="button" onClick={enableMfa} disabled={busy || captchaMissing || mfaCode.length !== 6}>Habilitar MFA</button>}
+          <button className="primary" disabled={busy || captchaMissing}>{busy ? <Loader2 className="spin" /> : <ShieldCheck />} Entrar</button>
         </form>
       </section>
     </main>
