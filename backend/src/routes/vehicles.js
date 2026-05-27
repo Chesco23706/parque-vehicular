@@ -1,9 +1,10 @@
 ﻿import { Router } from 'express';
-import { all, get, run } from '../db.js';
+import { all, get, run, transaction } from '../db.js';
 import { authRequired, canAccessDepartment, requireRole } from '../middleware/auth.js';
 import { departmentScope, whereClause } from '../sql.js';
 import { vehicleSchema } from '../validators.js';
 import { audit } from '../audit.js';
+import { removeFiles } from '../storage.js';
 
 export const vehiclesRouter = Router();
 
@@ -58,13 +59,67 @@ vehiclesRouter.delete('/:id', authRequired, requireRole('admin', 'departamento')
   const reportes = Number((await get('SELECT COUNT(*) AS total FROM reportes_fallas WHERE vehiculo_id = ?', [req.params.id])).total);
   const checklists = Number((await get('SELECT COUNT(*) AS total FROM checklist_diario WHERE vehiculo_id = ?', [req.params.id])).total);
   const historial = Number((await get('SELECT COUNT(*) AS total FROM historial_estatus WHERE vehiculo_id = ?', [req.params.id])).total);
-  if (reportes || checklists || historial) {
+  if (req.user.role !== 'admin' && (reportes || checklists || historial)) {
     return res.status(409).json({ message: 'No se puede eliminar: el vehículo ya tiene historial, reportes o checklists' });
   }
 
-  await run('DELETE FROM vehiculos WHERE id = ?', [req.params.id]);
-  await audit(req, 'eliminar_vehiculo', 'vehiculos', req.params.id);
-  res.json({ ok: true });
+  const reportFiles = await all(
+    `SELECT e.bucket, e.stored_name
+     FROM evidencias_reportes e
+     JOIN reportes_fallas r ON r.id = e.reporte_id
+     WHERE r.vehiculo_id = ?`,
+    [req.params.id]
+  );
+  const checklistFiles = await all(
+    `SELECT e.bucket, e.stored_name
+     FROM evidencias_checklist e
+     JOIN checklist_diario c ON c.id = e.checklist_id
+     WHERE c.vehiculo_id = ?`,
+    [req.params.id]
+  );
+
+  await transaction(async (tx) => {
+    const vehicleReports = await tx.all('SELECT id FROM reportes_fallas WHERE vehiculo_id = ?', [req.params.id]);
+    const vehicleChecklists = await tx.all('SELECT id FROM checklist_diario WHERE vehiculo_id = ?', [req.params.id]);
+
+    for (const reporte of vehicleReports) {
+      await tx.run('DELETE FROM asignaciones_taller WHERE reporte_id = ?', [reporte.id]);
+      await tx.run('DELETE FROM reparaciones WHERE reporte_id = ?', [reporte.id]);
+      await tx.run('DELETE FROM seguimiento_reportes WHERE reporte_id = ?', [reporte.id]);
+      await tx.run('DELETE FROM evidencias_reportes WHERE reporte_id = ?', [reporte.id]);
+    }
+
+    await tx.run('DELETE FROM asignaciones_taller WHERE vehiculo_id = ?', [req.params.id]);
+    await tx.run('DELETE FROM reparaciones WHERE vehiculo_id = ?', [req.params.id]);
+
+    for (const checklist of vehicleChecklists) {
+      await tx.run('DELETE FROM evidencias_checklist WHERE checklist_id = ?', [checklist.id]);
+    }
+
+    await tx.run('DELETE FROM checklist_diario WHERE vehiculo_id = ?', [req.params.id]);
+    await tx.run('DELETE FROM reportes_fallas WHERE vehiculo_id = ?', [req.params.id]);
+    await tx.run('DELETE FROM historial_estatus WHERE vehiculo_id = ?', [req.params.id]);
+    await tx.run('DELETE FROM vehiculos WHERE id = ?', [req.params.id]);
+  });
+
+  const groupedFiles = [
+    ...reportFiles.map((file) => ({ ...file, fallbackBucket: 'evidencias-reportes' })),
+    ...checklistFiles.map((file) => ({ ...file, fallbackBucket: 'evidencias-checklist' }))
+  ].reduce((acc, file) => {
+    const bucket = file.bucket || file.fallbackBucket;
+    acc[bucket] = [...(acc[bucket] || []), file.stored_name];
+    return acc;
+  }, {});
+  for (const [bucket, paths] of Object.entries(groupedFiles)) await removeFiles(bucket, paths);
+
+  await audit(req, 'eliminar_vehiculo', 'vehiculos', req.params.id, {
+    numero_economico: current.numero_economico,
+    reportes,
+    checklists,
+    historial,
+    adminOverride: req.user.role === 'admin'
+  });
+  res.json({ ok: true, deleted: { reportes, checklists, historial } });
 });
 
 vehiclesRouter.get('/:id/historial', authRequired, async (req, res) => {
