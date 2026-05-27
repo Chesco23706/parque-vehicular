@@ -110,16 +110,25 @@ vehiclesRouter.delete('/:id', authRequired, requireRole('admin', 'departamento')
     acc[bucket] = [...(acc[bucket] || []), file.stored_name];
     return acc;
   }, {});
-  for (const [bucket, paths] of Object.entries(groupedFiles)) await removeFiles(bucket, paths);
+  const storageErrors = [];
+  for (const [bucket, paths] of Object.entries(groupedFiles)) {
+    try {
+      await removeFiles(bucket, paths);
+    } catch (error) {
+      storageErrors.push({ bucket, message: error.message });
+      console.error('No se pudieron eliminar evidencias del vehículo', { vehicleId: req.params.id, bucket, error: error.message });
+    }
+  }
 
   await audit(req, 'eliminar_vehiculo', 'vehiculos', req.params.id, {
     numero_economico: current.numero_economico,
     reportes,
     checklists,
     historial,
-    adminOverride: req.user.role === 'admin'
+    adminOverride: req.user.role === 'admin',
+    storageErrors
   });
-  res.json({ ok: true, deleted: { reportes, checklists, historial } });
+  res.json({ ok: true, deleted: { reportes, checklists, historial }, storageErrors });
 });
 
 vehiclesRouter.get('/:id/historial', authRequired, async (req, res) => {
