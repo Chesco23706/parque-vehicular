@@ -7,7 +7,12 @@ alter table vehiculos enable row level security;
 alter table departamentos enable row level security;
 alter table reportes_fallas enable row level security;
 alter table checklist_diario enable row level security;
+alter table evidencias_checklist enable row level security;
+alter table evidencias_reportes enable row level security;
+alter table seguimiento_reportes enable row level security;
+alter table asignaciones_taller enable row level security;
 alter table reparaciones enable row level security;
+alter table historial_estatus enable row level security;
 alter table bitacora_actividad enable row level security;
 
 create or replace function app_user_role()
@@ -59,6 +64,128 @@ create policy reparaciones_por_rol on reparaciones
 for all
 using (app_user_role() = 'admin' or department_id = app_user_department())
 with check (app_user_role() = 'admin' or department_id = app_user_department());
+
+drop policy if exists evidencias_checklist_por_rol on evidencias_checklist;
+create policy evidencias_checklist_por_rol on evidencias_checklist
+for all
+using (
+  app_user_role() = 'admin'
+  or exists (
+    select 1
+    from checklist_diario c
+    where c.id = evidencias_checklist.checklist_id
+      and c.department_id = app_user_department()
+  )
+)
+with check (
+  app_user_role() = 'admin'
+  or exists (
+    select 1
+    from checklist_diario c
+    where c.id = evidencias_checklist.checklist_id
+      and c.department_id = app_user_department()
+  )
+);
+
+drop policy if exists evidencias_reportes_por_rol on evidencias_reportes;
+create policy evidencias_reportes_por_rol on evidencias_reportes
+for all
+using (
+  app_user_role() in ('admin', 'taller')
+  or exists (
+    select 1
+    from reportes_fallas r
+    where r.id = evidencias_reportes.reporte_id
+      and r.department_id = app_user_department()
+  )
+)
+with check (
+  app_user_role() = 'admin'
+  or exists (
+    select 1
+    from reportes_fallas r
+    where r.id = evidencias_reportes.reporte_id
+      and r.department_id = app_user_department()
+  )
+);
+
+drop policy if exists seguimiento_reportes_por_rol on seguimiento_reportes;
+create policy seguimiento_reportes_por_rol on seguimiento_reportes
+for all
+using (
+  app_user_role() in ('admin', 'taller')
+  or exists (
+    select 1
+    from reportes_fallas r
+    where r.id = seguimiento_reportes.reporte_id
+      and r.department_id = app_user_department()
+  )
+)
+with check (
+  app_user_role() in ('admin', 'taller')
+  or exists (
+    select 1
+    from reportes_fallas r
+    where r.id = seguimiento_reportes.reporte_id
+      and r.department_id = app_user_department()
+  )
+);
+
+drop policy if exists asignaciones_taller_por_rol on asignaciones_taller;
+create policy asignaciones_taller_por_rol on asignaciones_taller
+for all
+using (
+  app_user_role() in ('admin', 'taller')
+  or exists (
+    select 1
+    from reportes_fallas r
+    where r.id = asignaciones_taller.reporte_id
+      and r.department_id = app_user_department()
+  )
+  or exists (
+    select 1
+    from vehiculos v
+    where v.id = asignaciones_taller.vehiculo_id
+      and v.department_id = app_user_department()
+  )
+)
+with check (
+  app_user_role() = 'admin'
+  or exists (
+    select 1
+    from reportes_fallas r
+    where r.id = asignaciones_taller.reporte_id
+      and r.department_id = app_user_department()
+  )
+  or exists (
+    select 1
+    from vehiculos v
+    where v.id = asignaciones_taller.vehiculo_id
+      and v.department_id = app_user_department()
+  )
+);
+
+drop policy if exists historial_estatus_por_rol on historial_estatus;
+create policy historial_estatus_por_rol on historial_estatus
+for all
+using (
+  app_user_role() = 'admin'
+  or exists (
+    select 1
+    from vehiculos v
+    where v.id = historial_estatus.vehiculo_id
+      and v.department_id = app_user_department()
+  )
+)
+with check (
+  app_user_role() = 'admin'
+  or exists (
+    select 1
+    from vehiculos v
+    where v.id = historial_estatus.vehiculo_id
+      and v.department_id = app_user_department()
+  )
+);
 
 drop policy if exists bitacora_por_rol on bitacora_actividad;
 create policy bitacora_por_rol on bitacora_actividad
