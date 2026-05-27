@@ -14,6 +14,8 @@ alter table asignaciones_taller enable row level security;
 alter table reparaciones enable row level security;
 alter table historial_estatus enable row level security;
 alter table bitacora_actividad enable row level security;
+alter table talleres enable row level security;
+alter table presupuesto_config enable row level security;
 
 create or replace function app_user_role()
 returns text
@@ -186,6 +188,18 @@ with check (
       and v.department_id = app_user_department()
   )
 );
+
+drop policy if exists talleres_por_rol on talleres;
+create policy talleres_por_rol on talleres
+for all
+using (app_user_role() in ('admin', 'taller'))
+with check (app_user_role() = 'admin');
+
+drop policy if exists presupuesto_config_admin on presupuesto_config;
+create policy presupuesto_config_admin on presupuesto_config
+for all
+using (app_user_role() = 'admin')
+with check (app_user_role() = 'admin');
 
 drop policy if exists bitacora_por_rol on bitacora_actividad;
 create policy bitacora_por_rol on bitacora_actividad
