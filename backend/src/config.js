@@ -23,7 +23,7 @@ export const config = {
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean),
-  maxUploadMb: Number(process.env.MAX_UPLOAD_MB || 25),
+  maxUploadMb: Number(process.env.MAX_UPLOAD_MB || 100),
   cookieSecure: process.env.COOKIE_SECURE === 'true' || process.env.NODE_ENV === 'production',
   requireHttps: process.env.REQUIRE_HTTPS === 'true' || process.env.NODE_ENV === 'production',
   captchaToken: process.env.CAPTCHA_TOKEN || '',

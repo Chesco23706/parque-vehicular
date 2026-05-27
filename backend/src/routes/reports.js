@@ -1,11 +1,11 @@
 import { Router } from 'express';
-import { all, get, transaction } from '../db.js';
+import { all, get, run, transaction } from '../db.js';
 import { authRequired, canAccessDepartment, requireRole } from '../middleware/auth.js';
 import { upload } from '../middleware/upload.js';
 import { departmentScope, whereClause } from '../sql.js';
 import { reportSchema, seguimientoSchema } from '../validators.js';
 import { audit } from '../audit.js';
-import { removeFiles, uploadFile } from '../storage.js';
+import { createSignedUpload, removeFiles, uploadFile } from '../storage.js';
 
 export const reportsRouter = Router();
 const REPORTS_BUCKET = 'evidencias-reportes';
@@ -77,6 +77,32 @@ reportsRouter.get('/:id', authRequired, async (req, res) => {
     seguimiento: await all(`SELECT s.*, u.nombre AS usuario FROM seguimiento_reportes s JOIN usuarios u ON u.id = s.usuario_id WHERE reporte_id = ? ORDER BY created_at`, [req.params.id]),
     evidencias: await all('SELECT id, file_name, mime_type, size_bytes, created_at FROM evidencias_reportes WHERE reporte_id = ? ORDER BY created_at DESC', [req.params.id])
   });
+});
+
+reportsRouter.post('/:id/evidencias/sign', authRequired, async (req, res) => {
+  const reporte = await get('SELECT * FROM reportes_fallas WHERE id = ?', [req.params.id]);
+  if (!reporte) return res.status(404).json({ message: 'Reporte no encontrado' });
+  if (!reportAccess(req, reporte)) return res.status(403).json({ message: 'Permiso insuficiente' });
+  const signed = await createSignedUpload(REPORTS_BUCKET, req.body, `reportes/${reporte.id}`);
+  res.json(signed);
+});
+
+reportsRouter.post('/:id/evidencias/complete', authRequired, async (req, res) => {
+  const reporte = await get('SELECT * FROM reportes_fallas WHERE id = ?', [req.params.id]);
+  if (!reporte) return res.status(404).json({ message: 'Reporte no encontrado' });
+  if (!reportAccess(req, reporte)) return res.status(403).json({ message: 'Permiso insuficiente' });
+  const bucket = String(req.body.bucket || '');
+  const storedName = String(req.body.storedName || '');
+  if (bucket !== REPORTS_BUCKET || !storedName.startsWith(`reportes/${reporte.id}/`)) {
+    return res.status(400).json({ message: 'Ruta de evidencia no válida' });
+  }
+  const result = await run(
+    `INSERT INTO evidencias_reportes (reporte_id, uploaded_by, file_name, stored_name, mime_type, size_bytes, bucket)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [reporte.id, req.user.id, req.body.fileName, storedName, req.body.mimeType, req.body.sizeBytes, bucket]
+  );
+  await audit(req, 'subir_evidencia_reporte', 'evidencias_reportes', result.lastInsertRowid, { reporte_id: reporte.id, fileName: req.body.fileName });
+  res.status(201).json({ id: result.lastInsertRowid });
 });
 
 reportsRouter.delete('/:id', authRequired, requireRole('admin'), async (req, res) => {

@@ -23,7 +23,8 @@ import './styles.css';
 
 const APP_VERSION = 'v0.5';
 const MAX_EVIDENCE_FILES = 5;
-const MAX_UPLOAD_TOTAL_BYTES = 4 * 1024 * 1024;
+const MAX_UPLOAD_FILE_BYTES = 100 * 1024 * 1024;
+const MAX_UPLOAD_TOTAL_BYTES = 250 * 1024 * 1024;
 const MAX_IMAGE_SIDE = 1600;
 const IMAGE_COMPRESS_QUALITY = 0.82;
 const evidenceTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf', 'video/mp4', 'video/quicktime']);
@@ -140,7 +141,7 @@ function renamedImageFileName(name) {
 }
 
 async function compressImageFile(file) {
-  if (!file.type.startsWith('image/') || file.size <= MAX_UPLOAD_TOTAL_BYTES) return file;
+  if (!file.type.startsWith('image/') || file.size <= MAX_UPLOAD_FILE_BYTES) return file;
 
   const bitmap = await createImageBitmap(file);
   const scale = Math.min(1, MAX_IMAGE_SIDE / Math.max(bitmap.width, bitmap.height));
@@ -175,8 +176,8 @@ async function prepareEvidenceFiles(incoming, currentFiles) {
       continue;
     }
 
-    if (file.size > MAX_UPLOAD_TOTAL_BYTES) {
-      messages.push(`${file.name}: pesa ${fileSizeMb(file.size)}. El máximo por archivo es ${fileSizeMb(MAX_UPLOAD_TOTAL_BYTES)}.`);
+    if (file.size > MAX_UPLOAD_FILE_BYTES) {
+      messages.push(`${file.name}: pesa ${fileSizeMb(file.size)}. El máximo por archivo es ${fileSizeMb(MAX_UPLOAD_FILE_BYTES)}.`);
       continue;
     }
 
@@ -192,7 +193,7 @@ async function prepareEvidenceFiles(incoming, currentFiles) {
   if (total > MAX_UPLOAD_TOTAL_BYTES) {
     return {
       files: currentFiles,
-      message: `Las evidencias pesan ${fileSizeMb(total)} en total. Para esta demo sube máximo ${fileSizeMb(MAX_UPLOAD_TOTAL_BYTES)} por envío.`
+      message: `Las evidencias pesan ${fileSizeMb(total)} en total. Sube máximo ${fileSizeMb(MAX_UPLOAD_TOTAL_BYTES)} por envío.`
     };
   }
 
@@ -594,15 +595,17 @@ function Reports({ vehicles, reports, workshops, refresh, role }) {
     event.preventDefault();
     const formElement = event.currentTarget;
     const data = new FormData(formElement);
-    data.delete('evidencias');
-    evidenceFiles.forEach((file) => data.append('evidencias', file));
+    const payload = Object.fromEntries(data.entries());
     setSaving(true);
     setError('');
     setProgressStep('preparing');
     try {
       await new Promise((resolve) => setTimeout(resolve, 180));
       setProgressStep('saving');
-      await api.crearReporte(data);
+      const report = await api.crearReporteJson(payload);
+      for (const file of evidenceFiles) {
+        await api.subirEvidenciaReporte(report.id, file);
+      }
       formElement.reset();
       setEvidenceFiles([]);
       setProgressStep('syncing');
@@ -706,7 +709,7 @@ function Reports({ vehicles, reports, workshops, refresh, role }) {
           </div>
           <textarea name="descripcion" placeholder="Descripción clara del problema" required minLength={10} />
           <input type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,application/pdf" onChange={validateFiles} />
-          <p className="hint">Puedes agregar archivos uno por uno. Máximo 5 evidencias y 4 MB por envío. Las imágenes grandes se comprimen automáticamente.</p>
+          <p className="hint">Puedes agregar archivos uno por uno. Máximo 5 evidencias, 100 MB por archivo y 250 MB por envío.</p>
           {evidenceFiles.length > 0 && (
             <div className="file-list">
               {evidenceFiles.map((file, index) => (
@@ -992,10 +995,12 @@ function Checklist({ vehicles, alerts, refresh }) {
     setSaving(true);
     const form = event.currentTarget;
     const data = new FormData(form);
-    data.delete('evidencias');
-    evidenceFiles.forEach((file) => data.append('evidencias', file));
+    const payload = Object.fromEntries(data.entries());
     try {
-      await api.crearChecklist(data);
+      const checklist = await api.crearChecklist(payload);
+      for (const file of evidenceFiles) {
+        await api.subirEvidenciaChecklist(checklist.id, file);
+      }
       form.reset();
       setEvidenceFiles([]);
       setValues(Object.fromEntries(checklistItems.map(([name]) => [name, 'Correcto'])));
@@ -1045,7 +1050,7 @@ function Checklist({ vehicles, alerts, refresh }) {
             {checklistItems.map(([name, label, icon]) => <StatusChoice key={name} name={name} label={label} icon={icon} value={values[name]} onChange={updateValue} />)}
           </div>
           <label>Fotos o evidencias de daño<input type="file" name="evidencias" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={addEvidence} /></label>
-          <p className="hint">Opcional. Agrega fotos una por una si hay daño visible. Máximo 5 archivos y 4 MB por envío.</p>
+          <p className="hint">Opcional. Agrega fotos una por una si hay daño visible. Máximo 5 archivos, 100 MB por archivo y 250 MB por envío.</p>
           {evidenceFiles.length > 0 && (
             <div className="file-list">
               {evidenceFiles.map((file, index) => (

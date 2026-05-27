@@ -6,7 +6,7 @@ import { checklistSchema } from '../validators.js';
 import { audit } from '../audit.js';
 import { todayLocal } from '../date.js';
 import { upload } from '../middleware/upload.js';
-import { uploadFile } from '../storage.js';
+import { createSignedUpload, uploadFile } from '../storage.js';
 
 export const checklistsRouter = Router();
 const CHECKLIST_BUCKET = 'evidencias-checklist';
@@ -62,6 +62,32 @@ checklistsRouter.post('/', authRequired, upload.array('evidencias', 5), async (r
   await run('UPDATE vehiculos SET kilometraje = GREATEST(kilometraje, ?), updated_at = CURRENT_TIMESTAMP WHERE id = ?', [data.kilometraje_actual, vehicle.id]);
   await audit(req, existing ? 'actualizar_checklist' : 'crear_checklist', 'checklist_diario', checklistId, data);
   res.status(existing ? 200 : 201).json(await get('SELECT * FROM checklist_diario WHERE id = ?', [checklistId]));
+});
+
+checklistsRouter.post('/:id/evidencias/sign', authRequired, async (req, res) => {
+  const checklist = await get('SELECT * FROM checklist_diario WHERE id = ?', [req.params.id]);
+  if (!checklist) return res.status(404).json({ message: 'Checklist no encontrado' });
+  if (!canAccessDepartment(req, checklist.department_id)) return res.status(403).json({ message: 'Permiso insuficiente' });
+  const signed = await createSignedUpload(CHECKLIST_BUCKET, req.body, `checklists/${checklist.id}`);
+  res.json(signed);
+});
+
+checklistsRouter.post('/:id/evidencias/complete', authRequired, async (req, res) => {
+  const checklist = await get('SELECT * FROM checklist_diario WHERE id = ?', [req.params.id]);
+  if (!checklist) return res.status(404).json({ message: 'Checklist no encontrado' });
+  if (!canAccessDepartment(req, checklist.department_id)) return res.status(403).json({ message: 'Permiso insuficiente' });
+  const bucket = String(req.body.bucket || '');
+  const storedName = String(req.body.storedName || '');
+  if (bucket !== CHECKLIST_BUCKET || !storedName.startsWith(`checklists/${checklist.id}/`)) {
+    return res.status(400).json({ message: 'Ruta de evidencia no válida' });
+  }
+  const result = await run(
+    `INSERT INTO evidencias_checklist (checklist_id, uploaded_by, file_name, stored_name, mime_type, size_bytes, bucket)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [checklist.id, req.user.id, req.body.fileName, storedName, req.body.mimeType, req.body.sizeBytes, bucket]
+  );
+  await audit(req, 'subir_evidencia_checklist', 'evidencias_checklist', result.lastInsertRowid, { checklist_id: checklist.id, fileName: req.body.fileName });
+  res.status(201).json({ id: result.lastInsertRowid });
 });
 
 checklistsRouter.get('/alertas', authRequired, async (req, res) => {

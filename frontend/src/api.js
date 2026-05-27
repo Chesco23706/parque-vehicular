@@ -70,6 +70,31 @@ async function logout() {
   }
 }
 
+async function uploadToSignedUrl(signed, file) {
+  const body = new FormData();
+  body.append('cacheControl', '3600');
+  body.append('', file);
+  const res = await fetch(signed.signedUrl, { method: 'PUT', body });
+  if (!res.ok) throw new Error('No se pudo subir el archivo a Supabase Storage');
+  return res.json().catch(() => ({ ok: true }));
+}
+
+async function signedUpload(path, file, signer, completer) {
+  const signed = await signer({
+    fileName: file.name,
+    mimeType: file.type,
+    sizeBytes: file.size
+  });
+  await uploadToSignedUrl(signed, file);
+  return completer({
+    bucket: signed.bucket,
+    storedName: signed.storedName,
+    fileName: signed.fileName,
+    mimeType: signed.mimeType,
+    sizeBytes: signed.sizeBytes
+  });
+}
+
 export async function downloadFile(path, filename) {
   const blob = await request(path);
   const url = URL.createObjectURL(blob);
@@ -111,6 +136,13 @@ export const api = {
   crearReparacion: (data) => request('/reparaciones', { method: 'POST', body: data instanceof FormData ? data : JSON.stringify(data) }),
   editarReparacion: (id, data) => request(`/reparaciones/${id}`, { method: 'PUT', body: data instanceof FormData ? data : JSON.stringify(data) }),
   crearReporte: (form) => request('/reportes', { method: 'POST', body: form }),
+  crearReporteJson: (data) => request('/reportes', { method: 'POST', body: JSON.stringify(data) }),
+  subirEvidenciaReporte: (id, file) => signedUpload(
+    `/reportes/${id}`,
+    file,
+    (meta) => request(`/reportes/${id}/evidencias/sign`, { method: 'POST', body: JSON.stringify(meta) }),
+    (meta) => request(`/reportes/${id}/evidencias/complete`, { method: 'POST', body: JSON.stringify(meta) })
+  ),
   eliminarReporte: (id) => request(`/reportes/${id}`, { method: 'DELETE' }),
   seguimiento: (id, form) => request(`/reportes/${id}/seguimiento`, { method: 'POST', body: form }),
   talleres: () => request('/talleres'),
@@ -120,6 +152,12 @@ export const api = {
   asignaciones: () => request('/talleres/asignaciones'),
   checklists: () => request('/checklists'),
   crearChecklist: (data) => request('/checklists', { method: 'POST', body: data instanceof FormData ? data : JSON.stringify(data) }),
+  subirEvidenciaChecklist: (id, file) => signedUpload(
+    `/checklists/${id}`,
+    file,
+    (meta) => request(`/checklists/${id}/evidencias/sign`, { method: 'POST', body: JSON.stringify(meta) }),
+    (meta) => request(`/checklists/${id}/evidencias/complete`, { method: 'POST', body: JSON.stringify(meta) })
+  ),
   alertasChecklist: () => request('/checklists/alertas'),
   historial: () => request('/auditoria'),
   exportarVehiculos: () => downloadFile('/exportar/vehiculos.xls', 'vehiculos.xls'),
