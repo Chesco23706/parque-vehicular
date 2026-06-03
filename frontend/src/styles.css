@@ -421,6 +421,23 @@ em {
 }
 .report-card div { display: grid; gap: 3px; }
 .report-card span, .report-card small { color: #736947; }
+.failure-summary {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(43, 45, 66, 0.035);
+  color: #645b3c;
+  overflow-wrap: anywhere;
+}
+.failure-summary strong {
+  color: var(--brown, #4a2d1e);
+}
+.report-card .failure-summary span {
+  color: inherit;
+}
 .repair-list { display: grid; gap: 10px; }
 .repair-card {
   display: grid;

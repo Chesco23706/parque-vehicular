@@ -589,7 +589,7 @@ function Reports({ vehicles, reports, workshops, refresh, role }) {
     cotizacion_total: '',
     observaciones: ''
   });
-  const visible = useMemo(() => reports.filter((report) => `${report.numero_economico} ${report.tipo_falla} ${report.urgencia} ${labelStatus(report.flujo_estatus)}`.toLowerCase().includes(query.toLowerCase())), [reports, query]);
+  const visible = useMemo(() => reports.filter((report) => `${report.numero_economico} ${report.tipo_falla} ${report.descripcion || ''} ${report.urgencia} ${labelStatus(report.flujo_estatus)}`.toLowerCase().includes(query.toLowerCase())), [reports, query]);
 
   async function submit(event) {
     event.preventDefault();
@@ -731,7 +731,7 @@ function Reports({ vehicles, reports, workshops, refresh, role }) {
           {visible.map((report) => (
             <article className="report-card" key={report.id}>
               <div><strong>#{report.id} {report.numero_economico}</strong><span>{labelDepartment(report.departamento)}</span></div>
-              <p>{labelFailure(report.tipo_falla)}</p>
+              <p className="failure-summary"><strong>{labelFailure(report.tipo_falla)}</strong><span>{report.descripcion || 'Sin descripción registrada'}</span></p>
               <em className={report.urgencia === 'Critica' ? 'bad' : 'warn'}>{labelUrgency(report.urgencia)}</em>
               <small>{labelStatus(report.flujo_estatus)}{report.taller_asignado ? ` | ${report.taller_asignado} | ${money(report.cotizacion_total)}` : ''}</small>
               {role === 'admin' && !report.asignacion_id && report.flujo_estatus !== 'Caso cerrado' && <button onClick={() => openAssignment(report)}>Asignar taller</button>}
