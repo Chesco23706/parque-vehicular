@@ -649,8 +649,49 @@ em {
 .budget-grid strong { font-size: 1.35rem; }
 .budget-grid .negative { color: #be1e2d; }
 .budget-form {
-  grid-template-columns: minmax(220px, 360px) auto;
+  grid-template-columns: minmax(180px, 260px) minmax(220px, 360px) auto;
   align-items: end;
+}
+.budget-report-list {
+  display: grid;
+  gap: 12px;
+}
+.budget-report-row {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #eadca7;
+  border-left: 5px solid #f1c232;
+  border-radius: 8px;
+  background: #fffdf7;
+}
+.budget-report-main,
+.budget-report-detail {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.budget-report-main div,
+.budget-report-detail div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.budget-report-row span,
+.budget-report-row small {
+  color: #736947;
+  font-size: 0.9rem;
+}
+.budget-report-row strong {
+  overflow-wrap: anywhere;
+}
+.budget-report-row p {
+  margin: 0;
+  color: #645b3c;
+  background: #fff6d3;
+  border-radius: 8px;
+  padding: 10px;
+  overflow-wrap: anywhere;
 }
 .archive-actions {
   display: grid;
@@ -668,6 +709,8 @@ em {
   .checklist-layout { grid-template-columns: 1fr; }
   .help-grid { grid-template-columns: 1fr; }
   .budget-overview { grid-template-columns: 1fr; }
+  .budget-report-main,
+  .budget-report-detail { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .vehicle-row, .user-row, .report-card, .repair-card, .history-row { grid-template-columns: 1fr; }
 }
 
@@ -685,6 +728,8 @@ em {
   .progress-steps.compact .progress-step:nth-child(4)::before { display: block; }
   .segmented { grid-template-columns: 1fr; }
   .budget-form { grid-template-columns: 1fr; }
+  .budget-report-main,
+  .budget-report-detail { grid-template-columns: 1fr; }
   .archive-actions { grid-template-columns: 1fr; }
   header { align-items: flex-start; flex-direction: column; }
   .bars div { grid-template-columns: 1fr auto; }
@@ -1281,11 +1326,14 @@ aside {
 
 .side-brand small {
   border: 1px solid rgba(121, 89, 0, 0.18);
-  border-radius: 999px;
+  border-radius: 8px;
   color: rgba(74, 45, 30, 0.72);
   font-size: 0.72rem;
   font-weight: 800;
+  line-height: 1.25;
+  max-width: 180px;
   padding: 3px 9px;
+  overflow-wrap: anywhere;
 }
 
 .side-nav {

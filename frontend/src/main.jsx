@@ -21,7 +21,10 @@ import {
 import { api } from './api.js';
 import './styles.css';
 
-const APP_VERSION = 'V1';
+const APP_VERSION = 'V1.1';
+const APP_CHANGE_TITLE = 'Informe detallado mensual de presupuesto';
+const APP_RELEASE_TITLE = `${APP_VERSION} - ${APP_CHANGE_TITLE}`;
+document.title = APP_RELEASE_TITLE;
 const MAX_EVIDENCE_FILES = 5;
 const MAX_UPLOAD_FILE_BYTES = 100 * 1024 * 1024;
 const MAX_UPLOAD_TOTAL_BYTES = 250 * 1024 * 1024;
@@ -624,6 +627,11 @@ function Reports({ vehicles, reports, workshops, refresh, role }) {
   const [assignmentError, setAssignmentError] = useState('');
   const [reportDetails, setReportDetails] = useState({});
   const [detailLoadingId, setDetailLoadingId] = useState(null);
+  const [editingReport, setEditingReport] = useState(null);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState('');
+  const failureOptions = ['Mecanica', 'Electrica', 'Llantas', 'Frenos', 'Motor', 'Carroceria', 'Documentacion', 'Otro'];
+  const urgencyOptions = ['Baja', 'Media', 'Alta', 'Critica'];
   const [assignmentForm, setAssignmentForm] = useState({
     taller_nombre: '',
     fecha_ingreso: localDateInput(),
@@ -631,7 +639,17 @@ function Reports({ vehicles, reports, workshops, refresh, role }) {
     cotizacion_total: '',
     observaciones: ''
   });
+  const [editForm, setEditForm] = useState({
+    vehiculo_id: vehicles[0]?.id || '',
+    tipo_falla: 'Mecanica',
+    urgencia: 'Baja',
+    descripcion: ''
+  });
   const visible = useMemo(() => reports.filter((report) => `${report.numero_economico} ${report.tipo_falla} ${report.descripcion || ''} ${report.urgencia} ${labelStatus(report.flujo_estatus)}`.toLowerCase().includes(query.toLowerCase())), [reports, query]);
+
+  useEffect(() => {
+    if (!editForm.vehiculo_id && vehicles[0]?.id) setEditForm((current) => ({ ...current, vehiculo_id: vehicles[0].id }));
+  }, [vehicles, editForm.vehiculo_id]);
 
   async function submit(event) {
     event.preventDefault();
@@ -766,6 +784,42 @@ function Reports({ vehicles, reports, workshops, refresh, role }) {
     }
   }
 
+  function openEditReport(report) {
+    setEditingReport(report);
+    setEditError('');
+    setEditForm({
+      vehiculo_id: report.vehiculo_id,
+      tipo_falla: report.tipo_falla,
+      urgencia: report.urgencia,
+      descripcion: report.descripcion || ''
+    });
+  }
+
+  async function saveReportEdit(event) {
+    event.preventDefault();
+    if (!editingReport) return;
+    setEditSaving(true);
+    setEditError('');
+    try {
+      await api.editarReporte(editingReport.id, editForm);
+      setReportDetails((details) => {
+        const next = { ...details };
+        delete next[editingReport.id];
+        return next;
+      });
+      setEditingReport(null);
+      await refresh('reportes', true);
+      await refresh('reparaciones', true);
+      await refresh('vehiculos', true);
+      await refresh('dashboard', true);
+      await refresh('presupuesto', true);
+    } catch (err) {
+      setEditError(err.message);
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
   return (
     <div className="work-grid">
       <section className="panel">
@@ -774,8 +828,8 @@ function Reports({ vehicles, reports, workshops, refresh, role }) {
         <form className="stack-form" onSubmit={submit}>
           <select name="vehiculo_id" required>{vehicles.map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.numero_economico} - {vehicle.tipo}</option>)}</select>
           <div className="two-col">
-            <select name="tipo_falla">{['Mecanica', 'Electrica', 'Llantas', 'Frenos', 'Motor', 'Carroceria', 'Documentacion', 'Otro'].map((item) => <option key={item} value={item}>{labelFailure(item)}</option>)}</select>
-            <select name="urgencia">{['Baja', 'Media', 'Alta', 'Critica'].map((item) => <option key={item} value={item}>{labelUrgency(item)}</option>)}</select>
+            <select name="tipo_falla">{failureOptions.map((item) => <option key={item} value={item}>{labelFailure(item)}</option>)}</select>
+            <select name="urgencia">{urgencyOptions.map((item) => <option key={item} value={item}>{labelUrgency(item)}</option>)}</select>
           </div>
           <textarea name="descripcion" placeholder="Descripción clara del problema" required minLength={10} />
           <input type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,application/pdf" onChange={validateFiles} />
@@ -807,6 +861,7 @@ function Reports({ vehicles, reports, workshops, refresh, role }) {
                 <p className="failure-summary"><strong>{labelFailure(report.tipo_falla)}</strong><span>{report.descripcion || 'Sin descripción registrada'}</span></p>
                 <em className={report.urgencia === 'Critica' ? 'bad' : 'warn'}>{labelUrgency(report.urgencia)}</em>
                 <small>{labelStatus(report.flujo_estatus)}{report.asignacion_id ? ` | ${report.taller_asignado || 'Sin taller asignado'} | ${money(report.cotizacion_total)}` : ''}</small>
+                {role === 'admin' && <button onClick={() => openEditReport(report)}>Editar</button>}
                 {role === 'admin' && <button onClick={() => toggleReportFiles(report)} disabled={loadingFiles}>{loadingFiles ? 'Cargando...' : detail?.open ? 'Ocultar archivos' : 'Ver archivos'}</button>}
                 {role === 'admin' && !report.asignacion_id && report.flujo_estatus !== 'Caso cerrado' && <button onClick={() => openAssignment(report)}>Registrar cotización</button>}
                 {['admin', 'taller'].includes(role) && report.flujo_estatus !== 'Caso cerrado' && <button onClick={() => advance(report)}>Siguiente etapa</button>}
@@ -849,6 +904,30 @@ function Reports({ vehicles, reports, workshops, refresh, role }) {
               <div className="modal-actions">
                 <button type="button" onClick={() => setAssigning(null)}>Cancelar</button>
                 <button className="primary" disabled={assignmentSaving}>{assignmentSaving ? 'Guardando...' : 'Registrar y descontar presupuesto'}</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
+      {editingReport && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <section className="modal wide">
+            <div className="panel-head">
+              <div>
+                <h2>Editar reporte de falla</h2>
+                <p>Actualiza la unidad, el tipo de falla, la urgencia o la descripción.</p>
+              </div>
+              <button type="button" onClick={() => setEditingReport(null)}>Cerrar</button>
+            </div>
+            {editError && <p className="error">{editError}</p>}
+            <form className="grid-form" onSubmit={saveReportEdit}>
+              <label>Vehículo<select value={editForm.vehiculo_id} onChange={(event) => setEditForm({ ...editForm, vehiculo_id: event.target.value })} required>{vehicles.map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.numero_economico} - {vehicle.tipo}</option>)}</select></label>
+              <label>Tipo de falla<select value={editForm.tipo_falla} onChange={(event) => setEditForm({ ...editForm, tipo_falla: event.target.value })}>{failureOptions.map((item) => <option key={item} value={item}>{labelFailure(item)}</option>)}</select></label>
+              <label>Urgencia<select value={editForm.urgencia} onChange={(event) => setEditForm({ ...editForm, urgencia: event.target.value })}>{urgencyOptions.map((item) => <option key={item} value={item}>{labelUrgency(item)}</option>)}</select></label>
+              <label className="full-field">Descripción<textarea value={editForm.descripcion} onChange={(event) => setEditForm({ ...editForm, descripcion: event.target.value })} minLength={10} required /></label>
+              <div className="modal-actions full-field">
+                <button type="button" onClick={() => setEditingReport(null)}>Cancelar</button>
+                <button className="primary" disabled={editSaving}>{editSaving ? 'Guardando...' : 'Guardar cambios'}</button>
               </div>
             </form>
           </section>
@@ -1485,17 +1564,43 @@ function VehicleHistory({ vehicles, role }) {
 }
 
 function BudgetView({ data, refresh }) {
-  const [amount, setAmount] = useState(data.asignado || 80000);
+  const [budgetMonth, setBudgetMonth] = useState(data.month || localMonthInput());
+  const [summary, setSummary] = useState({ month: data.month || localMonthInput(), asignado: data.asignado || 80000, gastado: data.gastado || 0, disponible: data.disponible || 80000, porcentajeUsado: data.porcentajeUsado || 0, movimientos: data.movimientos || [] });
+  const [amount, setAmount] = useState(summary.asignado || 80000);
   const [archiveMonth, setArchiveMonth] = useState(localMonthInput());
   const [saving, setSaving] = useState(false);
+  const [loadingBudget, setLoadingBudget] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const used = Number(data.porcentajeUsado || 0);
-  const disponible = Number(data.disponible || 0);
+  const used = Number(summary.porcentajeUsado || 0);
+  const disponible = Number(summary.disponible || 0);
+  const movimientos = summary.movimientos || [];
 
   useEffect(() => {
-    setAmount(data.asignado || 80000);
-  }, [data.asignado]);
+    if (!data.month) return;
+    setBudgetMonth(data.month);
+    setSummary({ month: data.month, asignado: data.asignado || 80000, gastado: data.gastado || 0, disponible: data.disponible || 0, porcentajeUsado: data.porcentajeUsado || 0, movimientos: data.movimientos || [] });
+  }, [data.month, data.asignado, data.gastado, data.disponible, data.porcentajeUsado]);
+
+  useEffect(() => {
+    let active = true;
+    async function loadBudgetMonth() {
+      setLoadingBudget(true);
+      setError('');
+      try {
+        const result = await api.presupuesto(budgetMonth);
+        if (!active) return;
+        setSummary(result);
+        setAmount(result.asignado || 80000);
+      } catch (err) {
+        if (active) setError(err.message);
+      } finally {
+        if (active) setLoadingBudget(false);
+      }
+    }
+    loadBudgetMonth();
+    return () => { active = false; };
+  }, [budgetMonth]);
 
   async function save(event) {
     event.preventDefault();
@@ -1503,10 +1608,11 @@ function BudgetView({ data, refresh }) {
     setMessage('');
     setError('');
     try {
-      await api.actualizarPresupuesto(amount);
-      await refresh('presupuesto', true);
+      const result = await api.actualizarPresupuesto(amount, budgetMonth);
+      setSummary(result);
+      setAmount(result.asignado || 80000);
       await refresh('dashboard', true);
-      setMessage('Presupuesto actualizado correctamente.');
+      setMessage(`Presupuesto de ${result.month} actualizado correctamente.`);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -1531,7 +1637,7 @@ function BudgetView({ data, refresh }) {
     setError('');
     try {
       const result = await api.limpiarRespaldoMensual(archiveMonth);
-      await refresh('presupuesto', true);
+      setSummary(await api.presupuesto(budgetMonth));
       await refresh('reportes', true);
       await refresh('dashboard', true);
       setMessage(`Limpieza completada: ${result.deletedReports} reportes y ${result.deletedFiles} archivos eliminados.`);
@@ -1545,7 +1651,7 @@ function BudgetView({ data, refresh }) {
       <section className="panel budget-overview">
         <div>
           <h2>Estado del presupuesto</h2>
-          <p>Presupuesto asignado para reparaciones y cotizaciones de talleres.</p>
+          <p>Mes {summary.month}</p>
         </div>
         <div className="budget-chart" style={{ '--used': `${used}%` }}>
           <div>
@@ -1554,23 +1660,24 @@ function BudgetView({ data, refresh }) {
           </div>
         </div>
         <div className="budget-grid">
-          <article><span>Asignado</span><strong>{money(data.asignado)}</strong></article>
-          <article><span>Gastado</span><strong>{money(data.gastado)}</strong></article>
-          <article><span>Disponible</span><strong className={disponible < 0 ? 'negative' : ''}>{money(data.disponible)}</strong></article>
+          <article><span>Asignado</span><strong>{money(summary.asignado)}</strong></article>
+          <article><span>Gastado</span><strong>{money(summary.gastado)}</strong></article>
+          <article><span>Disponible</span><strong className={disponible < 0 ? 'negative' : ''}>{money(summary.disponible)}</strong></article>
         </div>
       </section>
       <section className="panel">
         <div className="panel-head">
           <div>
-            <h2>Asignar nuevo presupuesto</h2>
-            <p>El monto no puede ser menor al gasto ya registrado.</p>
+            <h2>Asignar presupuesto mensual</h2>
+            <p>El monto debe cubrir el gasto registrado del mes.</p>
           </div>
         </div>
         {error && <p className="error">{error}</p>}
         {message && <p className="success">{message}</p>}
         <form className="budget-form" onSubmit={save}>
-          <label>Nuevo presupuesto<input type="number" min="1" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} required /></label>
-          <button className="primary" disabled={saving}>{saving ? 'Guardando...' : 'Actualizar presupuesto'}</button>
+          <label>Mes<input type="month" value={budgetMonth} onChange={(event) => setBudgetMonth(event.target.value)} required /></label>
+          <label>Presupuesto<input type="number" min="1" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} required /></label>
+          <button className="primary" disabled={saving || loadingBudget}>{saving ? 'Guardando...' : loadingBudget ? 'Cargando...' : 'Actualizar presupuesto'}</button>
         </form>
       </section>
       <section className="panel">
@@ -1587,16 +1694,42 @@ function BudgetView({ data, refresh }) {
         </div>
       </section>
       <section className="panel">
-        <h2>Gastos registrados</h2>
-        <div className="timeline">
-          {(data.movimientos || []).map((item) => (
-            <article className="history-row" key={item.id}>
-              <div><strong>{money(item.cotizacion_total)}</strong><span>{item.taller}</span></div>
-              <div><strong>{item.numero_economico}</strong><span>{labelFailure(item.tipo_falla)} | {labelUrgency(item.urgencia)}</span></div>
-              <div><strong>{item.cotizacion_registrada_at || item.created_at}</strong><span>Cotización registrada</span></div>
-            </article>
-          ))}
-          {!data.movimientos?.length && <Empty text="No hay gastos registrados todavía." />}
+        <div className="panel-head">
+          <div>
+            <h2>Informe detallado de {summary.month}</h2>
+            <p>{movimientos.length} gastos enlistados al detalle</p>
+          </div>
+          <strong>{money(summary.gastado)}</strong>
+        </div>
+        <div className="budget-report-list">
+          {movimientos.map((item) => {
+            const origin = item.tipo_movimiento === 'reporte' ? `Reporte #${item.reporte_id}` : `Reparación #${item.reparacion_id}`;
+            const vehicle = `${item.numero_economico} - ${item.vehiculo_tipo || 'Unidad'}`;
+            const vehicleMeta = [item.marca, item.modelo, item.placas].filter(Boolean).join(' | ');
+            return (
+              <article className="budget-report-row" key={item.id}>
+                <div className="budget-report-main">
+                  <div><span>Origen</span><strong>{origin}</strong></div>
+                  <div><span>Monto</span><strong>{money(item.cotizacion_total)}</strong></div>
+                  <div><span>Departamento</span><strong>{labelDepartment(item.departamento)}</strong></div>
+                  <div><span>Unidad</span><strong>{vehicle}</strong>{vehicleMeta && <small>{vehicleMeta}</small>}</div>
+                </div>
+                <div className="budget-report-detail">
+                  <div><span>Concepto</span><strong>{labelFailure(item.tipo_falla)}</strong></div>
+                  <div><span>Estatus</span><strong>{labelStatus(item.estatus || item.urgencia)}</strong></div>
+                  <div><span>Taller</span><strong>{item.taller || 'Sin taller registrado'}</strong></div>
+                  <div><span>Registrado por</span><strong>{labelName(item.usuario || 'Sin usuario')}</strong></div>
+                  <div><span>{item.tipo_movimiento === 'reporte' ? 'Fecha del reporte' : 'Fecha de ingreso'}</span><strong>{formatDateTime(item.fecha_presupuesto)}</strong></div>
+                  <div><span>Ingreso a taller</span><strong>{formatDateTime(item.fecha_ingreso)}</strong></div>
+                  <div><span>Entrega estimada</span><strong>{item.fecha_estimada_entrega ? formatDateTime(item.fecha_estimada_entrega) : 'Sin fecha'}</strong></div>
+                  <div><span>Cotización registrada</span><strong>{formatDateTime(item.cotizacion_registrada_at || item.fecha_movimiento)}</strong></div>
+                </div>
+                <p>{item.descripcion || 'Sin descripción registrada'}</p>
+                {item.observaciones && <p>Observaciones: {item.observaciones}</p>}
+              </article>
+            );
+          })}
+          {!movimientos.length && <Empty text="No hay gastos registrados en este mes." />}
         </div>
       </section>
     </div>
@@ -1748,7 +1881,7 @@ function App() {
         <div className="brand side-brand">
           <span>Parque Vehicular<br />Izamal</span>
           <strong>PV</strong>
-          <small>{APP_VERSION}</small>
+          <small>{APP_RELEASE_TITLE}</small>
         </div>
         <nav className="side-nav" aria-label="Navegación principal">
           {visibleTabs.map(({ id, label, icon: Icon }) => (
@@ -1770,7 +1903,7 @@ function App() {
         {tab === 'reportes' && <Reports vehicles={cache.vehiculos || []} reports={cache.reportes || []} workshops={cache.talleres || []} role={user.role} refresh={refresh} />}
         {tab === 'checklist' && <Checklist vehicles={cache.vehiculos || []} alerts={cache.checklist} refresh={refresh} />}
         {tab === 'historial' && <VehicleHistory vehicles={cache.vehiculos || []} role={user.role} />}
-        {tab === 'presupuesto' && user.role === 'admin' && <BudgetView data={cache.presupuesto || { asignado: 80000, gastado: 0, disponible: 80000, porcentajeUsado: 0, movimientos: [] }} refresh={refresh} />}
+        {tab === 'presupuesto' && user.role === 'admin' && <BudgetView data={cache.presupuesto || { month: localMonthInput(), asignado: 80000, gastado: 0, disponible: 80000, porcentajeUsado: 0, movimientos: [] }} refresh={refresh} />}
         {tab === 'ayuda' && <HelpView user={user} />}
         {tab === 'usuarios' && user.role === 'admin' && <Users users={cache.usuarios || []} departments={cache.departamentos || []} refresh={refresh} />}
       </main>

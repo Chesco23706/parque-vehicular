@@ -14,6 +14,8 @@ const vehicleStatusByFlow = {
   'Vehiculo entregado': 'Disponible',
   'Caso cerrado': 'Disponible'
 };
+const completedReportFlows = ['Reparacion terminada', 'Vehiculo entregado', 'Caso cerrado'];
+const shopReportFlows = ['Taller asignado', 'En diagnostico', 'Reparacion en proceso'];
 
 function safeDownloadName(fileName) {
   return String(fileName || 'archivo').replace(/[\r\n"\\]/g, '').trim() || 'archivo';
@@ -40,6 +42,36 @@ async function applyVehicleStatusFromReportFlow(tx, reporte, flowStatus) {
   }
 
   await tx.run('UPDATE vehiculos SET estatus = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [nextVehicleStatus, reporte.vehiculo_id]);
+}
+
+async function releaseVehicleIfNoBlockingReports(tx, vehicleId, ignoredReportId) {
+  const blockingReports = await tx.get(
+    `SELECT COUNT(*) AS total
+     FROM reportes_fallas
+     WHERE vehiculo_id = ?
+       AND id != ?
+       AND flujo_estatus NOT IN ('Reparacion terminada', 'Vehiculo entregado', 'Caso cerrado')`,
+    [vehicleId, ignoredReportId]
+  );
+  const blockingRepairs = await tx.get(
+    `SELECT COUNT(*) AS total
+     FROM reparaciones
+     WHERE vehiculo_id = ?
+       AND estatus NOT IN ('Reparacion terminada', 'Entregado')`,
+    [vehicleId]
+  );
+  if (!Number(blockingReports?.total || 0) && !Number(blockingRepairs?.total || 0)) {
+    await tx.run('UPDATE vehiculos SET estatus = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['Disponible', vehicleId]);
+  }
+}
+
+async function applyVehicleStatusForReport(tx, report) {
+  if (completedReportFlows.includes(report.flujo_estatus)) {
+    return;
+  }
+
+  const nextVehicleStatus = shopReportFlows.includes(report.flujo_estatus) ? 'En taller' : 'Con falla reportada';
+  await tx.run('UPDATE vehiculos SET estatus = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [nextVehicleStatus, report.vehiculo_id]);
 }
 
 async function saveReportEvidence(tx, reporteId, userId, file) {
@@ -159,6 +191,37 @@ reportsRouter.post('/:id/evidencias/complete', authRequired, async (req, res) =>
   );
   await audit(req, 'subir_evidencia_reporte', 'evidencias_reportes', result.lastInsertRowid, { reporte_id: reporte.id, fileName: req.body.fileName });
   res.status(201).json({ id: result.lastInsertRowid });
+});
+
+reportsRouter.put('/:id', authRequired, requireRole('admin'), async (req, res) => {
+  const current = await get('SELECT * FROM reportes_fallas WHERE id = ?', [req.params.id]);
+  if (!current) return res.status(404).json({ message: 'Reporte no encontrado' });
+
+  const data = reportSchema.parse(req.body);
+  const vehicle = await get('SELECT * FROM vehiculos WHERE id = ?', [data.vehiculo_id]);
+  if (!vehicle) return res.status(404).json({ message: 'Vehiculo no encontrado' });
+
+  const vehicleChanged = Number(current.vehiculo_id) !== Number(vehicle.id);
+
+  await transaction(async (tx) => {
+    await tx.run(
+      `UPDATE reportes_fallas
+       SET vehiculo_id = ?, department_id = ?, tipo_falla = ?, descripcion = ?, urgencia = ?
+       WHERE id = ?`,
+      [vehicle.id, vehicle.department_id, data.tipo_falla, data.descripcion, data.urgencia, current.id]
+    );
+    await tx.run('UPDATE reparaciones SET department_id = ? WHERE reporte_id = ?', [vehicle.department_id, current.id]);
+
+    if (vehicleChanged) {
+      await tx.run('UPDATE asignaciones_taller SET vehiculo_id = ? WHERE reporte_id = ?', [vehicle.id, current.id]);
+      await tx.run('UPDATE reparaciones SET vehiculo_id = ? WHERE reporte_id = ?', [vehicle.id, current.id]);
+      await releaseVehicleIfNoBlockingReports(tx, current.vehiculo_id, current.id);
+      await applyVehicleStatusForReport(tx, { ...current, vehiculo_id: vehicle.id });
+    }
+  });
+
+  await audit(req, 'editar_reporte_falla', 'reportes_fallas', current.id, data);
+  res.json(await get('SELECT * FROM reportes_fallas WHERE id = ?', [current.id]));
 });
 
 reportsRouter.delete('/:id', authRequired, requireRole('admin'), async (req, res) => {

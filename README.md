@@ -1,8 +1,17 @@
 # Parque Vehicular Izamal
 
-Versión actual: **V1**
+Version actual: **V1.1 - Informe detallado mensual de presupuesto**
 
 Plataforma web para administrar vehículos oficiales por departamentos, con inicio de sesión, roles, reportes de fallas, seguimiento, talleres, reparaciones, checklist diario, presupuesto, auditoría y exportación de reportes.
+
+## Versionado de despliegues
+
+Cada cambio subido a Vercel debe actualizar el titulo visible con el formato `V# - titulo del cambio`.
+
+- Cambio grande: sumar `0.1`.
+- Cambio pequeno: sumar `0.01`.
+- Al acumular `0.10`, subir al siguiente numero entero.
+- Version actual desplegable: `V1.1 - Informe detallado mensual de presupuesto`.
 
 ## Estructura
 

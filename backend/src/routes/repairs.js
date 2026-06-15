@@ -5,7 +5,7 @@ import { authRequired, canAccessDepartment, requireRole } from '../middleware/au
 import { departmentScope, whereClause } from '../sql.js';
 import { repairSchema } from '../validators.js';
 import { upload } from '../middleware/upload.js';
-import { budgetSummary } from '../budget.js';
+import { budgetMonthFromDate, budgetSummaryForDate } from '../budget.js';
 import { downloadFile as downloadStorageFile, uploadFile } from '../storage.js';
 
 export const repairsRouter = Router();
@@ -41,11 +41,12 @@ repairsRouter.get('/', authRequired, async (req, res) => {
 repairsRouter.post('/', authRequired, requireRole('admin', 'departamento'), upload.single('cotizacion'), async (req, res) => {
   const data = repairSchema.parse(req.body);
   const vehicle = await get('SELECT * FROM vehiculos WHERE id = ?', [data.vehiculo_id]);
-  if (!vehicle) return res.status(404).json({ message: 'Vehículo no encontrado' });
+  if (!vehicle) return res.status(404).json({ message: 'Vehiculo no encontrado' });
   if (!canAccessDepartment(req, vehicle.department_id)) return res.status(403).json({ message: 'Permiso insuficiente' });
-  const budget = await budgetSummary();
+
+  const budget = await budgetSummaryForDate(data.fecha_ingreso);
   if (data.cotizacion_total > budget.disponible) {
-    return res.status(400).json({ message: 'Presupuesto insuficiente para registrar esta cotización' });
+    return res.status(400).json({ message: `Presupuesto insuficiente para registrar esta cotizacion en ${budget.month}` });
   }
   const quote = await uploadQuote(req.file);
 
@@ -78,7 +79,7 @@ repairsRouter.post('/', authRequired, requireRole('admin', 'departamento'), uplo
     await tx.run('UPDATE vehiculos SET estatus = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['En taller', vehicle.id]);
     await tx.run(
       'INSERT INTO historial_estatus (vehiculo_id, usuario_id, estatus_anterior, estatus_nuevo, comentario) VALUES (?, ?, ?, ?, ?)',
-      [vehicle.id, req.user.id, vehicle.estatus, 'En taller', `Reparación registrada: ${data.descripcion}`]
+      [vehicle.id, req.user.id, vehicle.estatus, 'En taller', `Reparacion registrada: ${data.descripcion}`]
     );
     return result.lastInsertRowid;
   });
@@ -89,13 +90,18 @@ repairsRouter.post('/', authRequired, requireRole('admin', 'departamento'), uplo
 
 repairsRouter.put('/:id', authRequired, requireRole('admin', 'departamento'), upload.single('cotizacion'), async (req, res) => {
   const current = await get('SELECT * FROM reparaciones WHERE id = ?', [req.params.id]);
-  if (!current) return res.status(404).json({ message: 'Reparación no encontrada' });
+  if (!current) return res.status(404).json({ message: 'Reparacion no encontrada' });
   if (!canAccessDepartment(req, current.department_id)) return res.status(403).json({ message: 'Permiso insuficiente' });
   const data = repairSchema.parse(req.body);
-  const delta = current.reporte_id ? 0 : Number(data.cotizacion_total || 0) - Number(current.cotizacion_total || 0);
-  const budget = await budgetSummary();
-  if (delta > budget.disponible) {
-    return res.status(400).json({ message: 'Presupuesto insuficiente para registrar esta cotización' });
+
+  const currentBudgetMonth = budgetMonthFromDate(current.fecha_ingreso);
+  const nextBudgetMonth = budgetMonthFromDate(data.fecha_ingreso);
+  const nextTotal = Number(data.cotizacion_total || 0);
+  const currentTotal = Number(current.cotizacion_total || 0);
+  const requiredBudget = current.reporte_id ? 0 : currentBudgetMonth === nextBudgetMonth ? nextTotal - currentTotal : nextTotal;
+  const budget = await budgetSummaryForDate(data.fecha_ingreso);
+  if (requiredBudget > budget.disponible) {
+    return res.status(400).json({ message: `Presupuesto insuficiente para registrar esta cotizacion en ${budget.month}` });
   }
 
   const quote = await uploadQuote(req.file, current.id);
@@ -134,9 +140,9 @@ repairsRouter.put('/:id', authRequired, requireRole('admin', 'departamento'), up
 
 repairsRouter.get('/:id/cotizacion', authRequired, async (req, res) => {
   const repair = await get('SELECT * FROM reparaciones WHERE id = ?', [req.params.id]);
-  if (!repair) return res.status(404).json({ message: 'Reparación no encontrada' });
+  if (!repair) return res.status(404).json({ message: 'Reparacion no encontrada' });
   if (!canAccessDepartment(req, repair.department_id)) return res.status(403).json({ message: 'Permiso insuficiente' });
-  if (!repair.cotizacion_stored_name) return res.status(404).json({ message: 'La reparación no tiene archivo de cotización' });
+  if (!repair.cotizacion_stored_name) return res.status(404).json({ message: 'La reparacion no tiene archivo de cotizacion' });
 
   const buffer = await downloadStorageFile(REPAIRS_BUCKET, repair.cotizacion_stored_name);
   if (!buffer) return res.status(404).json({ message: 'Archivo no encontrado en almacenamiento' });

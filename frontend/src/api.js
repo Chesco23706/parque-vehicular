@@ -119,8 +119,8 @@ export const api = {
   cambiarUsuario: (id, activo) => request(`/auth/users/${id}/status`, { method: 'PATCH', body: JSON.stringify({ activo }) }),
   cambiarPassword: (id, password) => request(`/auth/users/${id}/password`, { method: 'PATCH', body: JSON.stringify({ password }) }),
   dashboard: () => request('/dashboard'),
-  presupuesto: () => request('/presupuesto'),
-  actualizarPresupuesto: (monto) => request('/presupuesto', { method: 'PUT', body: JSON.stringify({ monto }) }),
+  presupuesto: (month) => request(`/presupuesto${month ? `?month=${encodeURIComponent(month)}` : ''}`),
+  actualizarPresupuesto: (monto, month) => request('/presupuesto', { method: 'PUT', body: JSON.stringify({ monto, month }) }),
   catalogos: () => request('/meta/catalogos'),
   departamentos: () => request('/meta/departamentos'),
   vehiculos: () => request('/vehiculos'),
@@ -138,6 +138,7 @@ export const api = {
   editarReparacion: (id, data) => request(`/reparaciones/${id}`, { method: 'PUT', body: data instanceof FormData ? data : JSON.stringify(data) }),
   crearReporte: (form) => request('/reportes', { method: 'POST', body: form }),
   crearReporteJson: (data) => request('/reportes', { method: 'POST', body: JSON.stringify(data) }),
+  editarReporte: (id, data) => request(`/reportes/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   subirEvidenciaReporte: (id, file) => signedUpload(
     `/reportes/${id}`,
     file,
