@@ -10,7 +10,7 @@ export const vehicleSchema = z.object({
   placas: z.string().min(2),
   numero_serie: z.string().min(4),
   kilometraje: z.coerce.number().int().nonnegative(),
-  estatus: z.enum(['Disponible', 'En uso', 'Con falla reportada', 'En revision', 'En taller', 'Reparado', 'Fuera de servicio']),
+  estatus: z.enum(['Disponible', 'En uso', 'Con falla reportada', 'En revision', 'En taller', 'Fuera de servicio']),
   observaciones: z.string().optional().default('')
 });
 
@@ -46,7 +46,7 @@ export const tallerSchema = z.object({
 export const asignacionSchema = z.object({
   reporte_id: z.coerce.number().int().positive(),
   taller_id: z.coerce.number().int().positive().optional(),
-  taller_nombre: z.string().min(2).optional(),
+  taller_nombre: z.preprocess((value) => String(value || '').trim() || undefined, z.string().min(2).optional()),
   fecha_ingreso: z.string().min(8),
   fecha_estimada_entrega: z.string().optional().default(''),
   costo_estimado: z.coerce.number().nonnegative().default(0),

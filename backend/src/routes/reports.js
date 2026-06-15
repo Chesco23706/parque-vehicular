@@ -5,13 +5,41 @@ import { upload } from '../middleware/upload.js';
 import { departmentScope, whereClause } from '../sql.js';
 import { reportSchema, seguimientoSchema } from '../validators.js';
 import { audit } from '../audit.js';
-import { createSignedUpload, removeFiles, uploadFile } from '../storage.js';
+import { createSignedUpload, downloadFile as downloadStorageFile, removeFiles, uploadFile } from '../storage.js';
 
 export const reportsRouter = Router();
 const REPORTS_BUCKET = 'evidencias-reportes';
+const vehicleStatusByFlow = {
+  'Reparacion terminada': 'Disponible',
+  'Vehiculo entregado': 'Disponible',
+  'Caso cerrado': 'Disponible'
+};
+
+function safeDownloadName(fileName) {
+  return String(fileName || 'archivo').replace(/[\r\n"\\]/g, '').trim() || 'archivo';
+}
 
 function reportAccess(req, reporte) {
   return req.user.role === 'admin' || req.user.role === 'taller' || canAccessDepartment(req, reporte.department_id);
+}
+
+async function applyVehicleStatusFromReportFlow(tx, reporte, flowStatus) {
+  const nextVehicleStatus = vehicleStatusByFlow[flowStatus];
+  if (!nextVehicleStatus) return;
+
+  if (nextVehicleStatus === 'Disponible') {
+    const blockingReports = await tx.get(
+      `SELECT COUNT(*) AS total
+       FROM reportes_fallas
+       WHERE vehiculo_id = ?
+         AND id != ?
+         AND flujo_estatus NOT IN ('Reparacion terminada', 'Vehiculo entregado', 'Caso cerrado')`,
+      [reporte.vehiculo_id, reporte.id]
+    );
+    if (Number(blockingReports?.total || 0) > 0) return;
+  }
+
+  await tx.run('UPDATE vehiculos SET estatus = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [nextVehicleStatus, reporte.vehiculo_id]);
 }
 
 async function saveReportEvidence(tx, reporteId, userId, file) {
@@ -75,8 +103,36 @@ reportsRouter.get('/:id', authRequired, async (req, res) => {
   res.json({
     reporte,
     seguimiento: await all(`SELECT s.*, u.nombre AS usuario FROM seguimiento_reportes s JOIN usuarios u ON u.id = s.usuario_id WHERE reporte_id = ? ORDER BY created_at`, [req.params.id]),
-    evidencias: await all('SELECT id, file_name, mime_type, size_bytes, created_at FROM evidencias_reportes WHERE reporte_id = ? ORDER BY created_at DESC', [req.params.id])
+    evidencias: await all(
+      `SELECT e.id, e.file_name, e.mime_type, e.size_bytes, e.created_at,
+              CASE WHEN a.cotizacion_evidencia_id = e.id THEN true ELSE false END AS es_cotizacion
+       FROM evidencias_reportes e
+       LEFT JOIN asignaciones_taller a ON a.reporte_id = e.reporte_id AND a.cotizacion_evidencia_id = e.id
+       WHERE e.reporte_id = ?
+       ORDER BY e.created_at DESC`,
+      [req.params.id]
+    )
   });
+});
+
+reportsRouter.get('/:id/evidencias/:evidenciaId/download', authRequired, async (req, res) => {
+  const evidencia = await get(
+    `SELECT e.*, r.department_id
+     FROM evidencias_reportes e
+     JOIN reportes_fallas r ON r.id = e.reporte_id
+     WHERE e.id = ? AND e.reporte_id = ?`,
+    [req.params.evidenciaId, req.params.id]
+  );
+  if (!evidencia) return res.status(404).json({ message: 'Evidencia no encontrada' });
+  if (!reportAccess(req, evidencia)) return res.status(403).json({ message: 'Permiso insuficiente' });
+
+  const buffer = await downloadStorageFile(evidencia.bucket || REPORTS_BUCKET, evidencia.stored_name);
+  if (!buffer) return res.status(404).json({ message: 'Archivo no encontrado en almacenamiento' });
+
+  const fileName = safeDownloadName(evidencia.file_name);
+  res.setHeader('Content-Disposition', `attachment; filename="${fileName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+  await audit(req, 'descargar_evidencia_reporte', 'evidencias_reportes', evidencia.id, { reporte_id: evidencia.reporte_id });
+  res.type(evidencia.mime_type || 'application/octet-stream').send(buffer);
 });
 
 reportsRouter.post('/:id/evidencias/sign', authRequired, async (req, res) => {
@@ -155,9 +211,7 @@ reportsRouter.post('/:id/seguimiento', authRequired, requireRole('admin', 'talle
     if (repairStatus) {
       await tx.run('UPDATE reparaciones SET estatus = ?, updated_at = CURRENT_TIMESTAMP WHERE reporte_id = ?', [repairStatus, reporte.id]);
     }
-    if (['Reparacion terminada', 'Vehiculo entregado', 'Caso cerrado'].includes(data.flujo_estatus)) {
-      await tx.run('UPDATE vehiculos SET estatus = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['Reparado', reporte.vehiculo_id]);
-    }
+    await applyVehicleStatusFromReportFlow(tx, reporte, data.flujo_estatus);
     await tx.run('INSERT INTO seguimiento_reportes (reporte_id, usuario_id, estatus_anterior, estatus_nuevo, comentario, evidencia_id) VALUES (?, ?, ?, ?, ?, ?)', [reporte.id, req.user.id, reporte.flujo_estatus, data.flujo_estatus, data.comentario, evidence]);
     return evidence;
   });

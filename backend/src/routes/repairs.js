@@ -6,10 +6,18 @@ import { departmentScope, whereClause } from '../sql.js';
 import { repairSchema } from '../validators.js';
 import { upload } from '../middleware/upload.js';
 import { budgetSummary } from '../budget.js';
-import { uploadFile } from '../storage.js';
+import { downloadFile as downloadStorageFile, uploadFile } from '../storage.js';
 
 export const repairsRouter = Router();
 const REPAIRS_BUCKET = 'reparaciones';
+const vehicleStatusByRepairStatus = {
+  'Reparacion terminada': 'Disponible',
+  Entregado: 'Disponible'
+};
+
+function safeDownloadName(fileName) {
+  return String(fileName || 'cotizacion').replace(/[\r\n"\\]/g, '').trim() || 'cotizacion';
+}
 
 async function uploadQuote(file, repairId = 'nueva') {
   return file ? uploadFile(REPAIRS_BUCKET, file, `cotizaciones/${repairId}`) : null;
@@ -115,10 +123,26 @@ repairsRouter.put('/:id', authRequired, requireRole('admin', 'departamento'), up
     params
   );
 
-  if (data.estatus === 'Entregado' || data.estatus === 'Reparacion terminada') {
-    await run('UPDATE vehiculos SET estatus = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['Reparado', current.vehiculo_id]);
+  const nextVehicleStatus = vehicleStatusByRepairStatus[data.estatus];
+  if (nextVehicleStatus) {
+    await run('UPDATE vehiculos SET estatus = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [nextVehicleStatus, current.vehiculo_id]);
   }
 
   await audit(req, 'editar_reparacion', 'reparaciones', req.params.id, data);
   res.json(await get('SELECT * FROM reparaciones WHERE id = ?', [req.params.id]));
+});
+
+repairsRouter.get('/:id/cotizacion', authRequired, async (req, res) => {
+  const repair = await get('SELECT * FROM reparaciones WHERE id = ?', [req.params.id]);
+  if (!repair) return res.status(404).json({ message: 'Reparación no encontrada' });
+  if (!canAccessDepartment(req, repair.department_id)) return res.status(403).json({ message: 'Permiso insuficiente' });
+  if (!repair.cotizacion_stored_name) return res.status(404).json({ message: 'La reparación no tiene archivo de cotización' });
+
+  const buffer = await downloadStorageFile(REPAIRS_BUCKET, repair.cotizacion_stored_name);
+  if (!buffer) return res.status(404).json({ message: 'Archivo no encontrado en almacenamiento' });
+
+  const fileName = safeDownloadName(repair.cotizacion_file_name);
+  res.setHeader('Content-Disposition', `attachment; filename="${fileName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+  await audit(req, 'descargar_cotizacion_reparacion', 'reparaciones', repair.id, { vehiculo_id: repair.vehiculo_id });
+  res.type(repair.cotizacion_mime_type || 'application/octet-stream').send(buffer);
 });

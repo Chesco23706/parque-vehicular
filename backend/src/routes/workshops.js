@@ -45,7 +45,7 @@ workshopsRouter.get('/asignaciones', authRequired, requireRole('admin', 'taller'
   res.json(await all(
     `SELECT a.*, t.nombre AS taller, v.numero_economico, r.urgencia, r.flujo_estatus
      FROM asignaciones_taller a
-     JOIN talleres t ON t.id = a.taller_id
+     LEFT JOIN talleres t ON t.id = a.taller_id
      JOIN vehiculos v ON v.id = a.vehiculo_id
      JOIN reportes_fallas r ON r.id = a.reporte_id
      ORDER BY a.created_at DESC`
@@ -114,7 +114,6 @@ workshopsRouter.post('/asignaciones-cotizacion', authRequired, requireRole('admi
 
   const id = await transaction(async (tx) => {
     const taller = await resolveWorkshop(tx, data);
-    if (!taller) throw new Error('Taller no encontrado');
     const evidence = await tx.run(
       `INSERT INTO evidencias_reportes (reporte_id, uploaded_by, file_name, stored_name, mime_type, size_bytes, bucket)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -124,13 +123,14 @@ workshopsRouter.post('/asignaciones-cotizacion', authRequired, requireRole('admi
       `INSERT INTO asignaciones_taller
        (reporte_id, taller_id, vehiculo_id, fecha_ingreso, fecha_estimada_entrega, costo_estimado, cotizacion_evidencia_id, cotizacion_total, cotizacion_registrada_at, observaciones)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)`,
-      [reporte.id, taller.id, reporte.vehiculo_id, data.fecha_ingreso, data.fecha_estimada_entrega, data.cotizacion_total, evidence.lastInsertRowid, data.cotizacion_total, data.observaciones]
+      [reporte.id, taller?.id || null, reporte.vehiculo_id, data.fecha_ingreso, data.fecha_estimada_entrega, data.cotizacion_total, evidence.lastInsertRowid, data.cotizacion_total, data.observaciones]
     );
     await tx.run('UPDATE reportes_fallas SET flujo_estatus = ? WHERE id = ?', ['Taller asignado', reporte.id]);
     await tx.run('UPDATE vehiculos SET estatus = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['En taller', reporte.vehiculo_id]);
+    const atencion = taller?.nombre || 'sin taller asignado';
     await tx.run(
       'INSERT INTO seguimiento_reportes (reporte_id, usuario_id, estatus_anterior, estatus_nuevo, comentario, evidencia_id) VALUES (?, ?, ?, ?, ?, ?)',
-      [reporte.id, req.user.id, reporte.flujo_estatus, 'Taller asignado', `Taller asignado: ${taller.nombre}. Cotización registrada por ${data.cotizacion_total} pesos.`, evidence.lastInsertRowid]
+      [reporte.id, req.user.id, reporte.flujo_estatus, 'Taller asignado', `Cotización registrada por ${data.cotizacion_total} pesos (${atencion}).`, evidence.lastInsertRowid]
     );
     const vehicle = await tx.get('SELECT * FROM vehiculos WHERE id = ?', [reporte.vehiculo_id]);
     const existingRepair = await tx.get('SELECT id FROM reparaciones WHERE reporte_id = ?', [reporte.id]);
@@ -145,8 +145,8 @@ workshopsRouter.post('/asignaciones-cotizacion', authRequired, requireRole('admi
           reporte.vehiculo_id,
           reporte.department_id,
           req.user.id,
-          taller.nombre,
-          taller.direccion || '',
+          taller?.nombre || 'Sin taller asignado',
+          taller?.direccion || '',
           reporte.descripcion,
           data.fecha_ingreso,
           data.fecha_estimada_entrega,
@@ -156,7 +156,7 @@ workshopsRouter.post('/asignaciones-cotizacion', authRequired, requireRole('admi
           data.observaciones
         ]
       );
-      await tx.run('INSERT INTO historial_estatus (vehiculo_id, usuario_id, estatus_anterior, estatus_nuevo, comentario) VALUES (?, ?, ?, ?, ?)', [reporte.vehiculo_id, req.user.id, vehicle?.estatus || 'Con falla reportada', 'En taller', `Unidad enviada a ${taller.nombre}`]);
+      await tx.run('INSERT INTO historial_estatus (vehiculo_id, usuario_id, estatus_anterior, estatus_nuevo, comentario) VALUES (?, ?, ?, ?, ?)', [reporte.vehiculo_id, req.user.id, vehicle?.estatus || 'Con falla reportada', 'En taller', taller ? `Unidad enviada a ${taller.nombre}` : 'Unidad marcada en atención sin taller asignado']);
     }
     return result.lastInsertRowid;
   });

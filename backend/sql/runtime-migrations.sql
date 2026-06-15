@@ -4,6 +4,11 @@
 alter table sesiones add column if not exists fingerprint text;
 alter table sesiones add column if not exists ip_change_count integer not null default 0;
 alter table sesiones alter column suspicious set default false;
+alter table asignaciones_taller alter column taller_id drop not null;
+
+update vehiculos v
+set estatus = 'Disponible', updated_at = current_timestamp
+where v.estatus = 'Reparado';
 
 create index if not exists idx_sesiones_usuario_suspicious_created
 on sesiones (usuario_id, suspicious, created_at);

@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.5 - Demo estable
+## V1 - Versión lista para producción inicial
 
 - Proyecto conectado a GitHub, Vercel y Supabase.
 - Backend Express preparado para despliegue serverless en Vercel.
@@ -13,7 +13,7 @@
 - Dashboard, vehículos, reportes, checklist, reparaciones, presupuesto, usuarios e historial funcionando como demo inicial.
 - Documentación privada generada en Word, ignorada por Git.
 
-## Pendiente para v0.6
+## Pendiente para V1.1
 
 - Integrar Cloudflare Turnstile o reCAPTCHA real.
 - Activar MFA obligatorio para administradores.

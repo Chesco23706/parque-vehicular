@@ -1,6 +1,6 @@
 # Parque Vehicular Izamal
 
-Versión actual: **v0.5**
+Versión actual: **V1**
 
 Plataforma web para administrar vehículos oficiales por departamentos, con inicio de sesión, roles, reportes de fallas, seguimiento, talleres, reparaciones, checklist diario, presupuesto, auditoría y exportación de reportes.
 

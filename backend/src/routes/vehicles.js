@@ -152,10 +152,14 @@ vehiclesRouter.get('/:id/historial', authRequired, async (req, res) => {
       [req.params.id]
     ),
     reportes: await all(
-      `SELECT r.*, u.nombre AS usuario, d.nombre AS departamento
+      `SELECT r.*, u.nombre AS usuario, d.nombre AS departamento,
+              a.id AS asignacion_id, a.cotizacion_total, a.cotizacion_registrada_at, t.nombre AS taller_asignado,
+              (SELECT COUNT(*) FROM evidencias_reportes e WHERE e.reporte_id = r.id) AS evidencias_count
        FROM reportes_fallas r
        JOIN usuarios u ON u.id = r.usuario_id
        JOIN departamentos d ON d.id = r.department_id
+       LEFT JOIN asignaciones_taller a ON a.reporte_id = r.id
+       LEFT JOIN talleres t ON t.id = a.taller_id
        WHERE r.vehiculo_id = ?
        ORDER BY r.created_at DESC`,
       [req.params.id]

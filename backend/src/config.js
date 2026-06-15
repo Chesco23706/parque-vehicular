@@ -9,7 +9,7 @@ function envFlag(name, fallback = false) {
 }
 
 export const config = {
-  appVersion: process.env.APP_VERSION || '0.5.0',
+  appVersion: process.env.APP_VERSION || '1.0.0',
   port: Number(process.env.PORT || 4000),
   jwtSecret: process.env.JWT_SECRET || 'dev-secret-change-me',
   sessionMinutes: Number(process.env.SESSION_MINUTES || 30),

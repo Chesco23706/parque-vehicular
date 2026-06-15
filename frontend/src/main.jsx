@@ -21,7 +21,7 @@ import {
 import { api } from './api.js';
 import './styles.css';
 
-const APP_VERSION = 'v0.5';
+const APP_VERSION = 'V1';
 const MAX_EVIDENCE_FILES = 5;
 const MAX_UPLOAD_FILE_BYTES = 100 * 1024 * 1024;
 const MAX_UPLOAD_TOTAL_BYTES = 250 * 1024 * 1024;
@@ -54,8 +54,8 @@ const nextFlow = {
 const reportFlowSteps = [
   ['Reporte recibido', 'Reporte recibido', 'La solicitud fue registrada.'],
   ['En revision por Parque Vehicular', 'En revisión', 'Parque Vehicular está revisando el caso.'],
-  ['Taller asignado', 'Taller asignado', 'La unidad ya tiene taller o proveedor asignado.'],
-  ['En diagnostico', 'En diagnóstico', 'El taller está revisando la falla.'],
+  ['Taller asignado', 'Cotización registrada', 'La falla ya tiene registro de atención.'],
+  ['En diagnostico', 'En diagnóstico', 'La falla está siendo revisada.'],
   ['Reparacion en proceso', 'Reparación en proceso', 'La unidad se encuentra en reparación.'],
   ['Reparacion terminada', 'Reparación terminada', 'El trabajo fue terminado por el taller.'],
   ['Vehiculo entregado', 'Vehículo entregado', 'La unidad fue devuelta al departamento.'],
@@ -66,6 +66,7 @@ const statusLabels = {
   'En revision': 'En revisión',
   'En revision por Parque Vehicular': 'En revisión por Parque Vehicular',
   'En diagnostico': 'En diagnóstico',
+  'Taller asignado': 'Cotización registrada',
   'Reparacion en proceso': 'Reparación en proceso',
   'Reparacion terminada': 'Reparación terminada',
   'Vehiculo entregado': 'Vehículo entregado',
@@ -112,7 +113,7 @@ function labelName(value = '') {
 
 function statusClass(value = '') {
   const normalized = value.toLowerCase();
-  if (['disponible', 'reparado'].includes(normalized)) return 'ok';
+  if (normalized === 'disponible') return 'ok';
   if (normalized.includes('revision')) return 'warn';
   if (normalized.includes('taller')) return 'shop';
   if (normalized.includes('falla') || normalized.includes('servicio') || normalized === 'critica') return 'bad';
@@ -134,6 +135,13 @@ function localMonthInput(date = new Date()) {
 
 function fileSizeMb(bytes) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function formatFileSize(bytes) {
+  const value = Number(bytes || 0);
+  if (!value) return '';
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return fileSizeMb(value);
 }
 
 function renamedImageFileName(name) {
@@ -520,7 +528,7 @@ function Vehicles({ data, departments, role, refresh }) {
       <div className="toolbar">
         <SearchBox value={query} onChange={setQuery} placeholder="Buscar por unidad, placas o departamento" />
         <select value={status} onChange={(event) => setStatus(event.target.value)}>
-          {['Todos', 'Disponible', 'En uso', 'Con falla reportada', 'En revision', 'En taller', 'Reparado', 'Fuera de servicio'].map((item) => <option key={item} value={item}>{labelStatus(item)}</option>)}
+          {['Todos', 'Disponible', 'En uso', 'Con falla reportada', 'En revision', 'En taller', 'Fuera de servicio'].map((item) => <option key={item} value={item}>{labelStatus(item)}</option>)}
         </select>
       </div>
       {open && (
@@ -544,7 +552,7 @@ function Vehicles({ data, departments, role, refresh }) {
               <label>Placas<input placeholder="Placas" value={form.placas} onChange={(event) => setForm({ ...form, placas: event.target.value })} required /></label>
               <label>Número de serie<input placeholder="Serie/VIN" value={form.numero_serie} onChange={(event) => setForm({ ...form, numero_serie: event.target.value })} required /></label>
               <label>Kilometraje<input type="number" value={form.kilometraje} onChange={(event) => setForm({ ...form, kilometraje: event.target.value })} /></label>
-              <label>Estatus<select value={form.estatus} onChange={(event) => setForm({ ...form, estatus: event.target.value })}>{['Disponible', 'En uso', 'Con falla reportada', 'En revision', 'En taller', 'Reparado', 'Fuera de servicio'].map((item) => <option key={item} value={item}>{labelStatus(item)}</option>)}</select></label>
+              <label>Estatus<select value={form.estatus} onChange={(event) => setForm({ ...form, estatus: event.target.value })}>{['Disponible', 'En uso', 'Con falla reportada', 'En revision', 'En taller', 'Fuera de servicio'].map((item) => <option key={item} value={item}>{labelStatus(item)}</option>)}</select></label>
               <label className="full-field">Observaciones<textarea value={form.observaciones} onChange={(event) => setForm({ ...form, observaciones: event.target.value })} placeholder="Observaciones generales de la unidad" /></label>
               <div className="modal-actions full-field">
                 <button type="button" onClick={() => { setOpen(false); setEditingId(null); }}>Cancelar</button>
@@ -573,6 +581,38 @@ function Vehicles({ data, departments, role, refresh }) {
   );
 }
 
+function ReportEvidenceList({ detail, loading, onDownload }) {
+  const files = detail?.evidencias || [];
+
+  return (
+    <div className="evidence-panel">
+      <div className="evidence-panel-head">
+        <strong>Archivos del reporte</strong>
+        {!loading && <span>{files.length} archivo{files.length === 1 ? '' : 's'}</span>}
+      </div>
+      {loading && <p>Cargando archivos...</p>}
+      {!loading && !files.length && <p>No hay evidencia o cotización subida.</p>}
+      {!loading && files.length > 0 && (
+        <div className="evidence-files">
+          {files.map((file) => {
+            const meta = [file.mime_type, formatFileSize(file.size_bytes)].filter(Boolean).join(' | ');
+            return (
+              <div key={file.id}>
+                <span>
+                  <strong>{file.es_cotizacion ? 'Cotización' : 'Evidencia'}</strong>
+                  {file.file_name}
+                  {meta && <small>{meta}</small>}
+                </span>
+                <button type="button" onClick={() => onDownload(file)}><FileDown size={16} /> Descargar</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Reports({ vehicles, reports, workshops, refresh, role }) {
   const [query, setQuery] = useState('');
   const [saving, setSaving] = useState(false);
@@ -582,6 +622,8 @@ function Reports({ vehicles, reports, workshops, refresh, role }) {
   const [assigning, setAssigning] = useState(null);
   const [assignmentSaving, setAssignmentSaving] = useState(false);
   const [assignmentError, setAssignmentError] = useState('');
+  const [reportDetails, setReportDetails] = useState({});
+  const [detailLoadingId, setDetailLoadingId] = useState(null);
   const [assignmentForm, setAssignmentForm] = useState({
     taller_nombre: '',
     fecha_ingreso: localDateInput(),
@@ -681,6 +723,34 @@ function Reports({ vehicles, reports, workshops, refresh, role }) {
     }
   }
 
+  async function toggleReportFiles(report) {
+    const current = reportDetails[report.id];
+    if (current) {
+      setReportDetails((details) => ({ ...details, [report.id]: { ...current, open: !current.open } }));
+      return;
+    }
+
+    setDetailLoadingId(report.id);
+    setError('');
+    try {
+      const detail = await api.detalleReporte(report.id);
+      setReportDetails((details) => ({ ...details, [report.id]: { ...detail, open: true } }));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setDetailLoadingId(null);
+    }
+  }
+
+  async function downloadReportEvidence(report, evidence) {
+    setError('');
+    try {
+      await api.descargarEvidenciaReporte(report.id, evidence);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   async function deleteReport(report) {
     const ok = window.confirm(`Eliminar la solicitud #${report.id} de ${report.numero_economico}? Esta acción también elimina sus evidencias.`);
     if (!ok) return;
@@ -728,18 +798,30 @@ function Reports({ vehicles, reports, workshops, refresh, role }) {
         <div className="panel-head"><div><h2>Seguimiento de reportes</h2><p>{visible.length} casos</p></div></div>
         <SearchBox value={query} onChange={setQuery} placeholder="Buscar reportes" />
         <div className="report-list">
-          {visible.map((report) => (
-            <article className="report-card" key={report.id}>
-              <div><strong>#{report.id} {report.numero_economico}</strong><span>{labelDepartment(report.departamento)}</span></div>
-              <p className="failure-summary"><strong>{labelFailure(report.tipo_falla)}</strong><span>{report.descripcion || 'Sin descripción registrada'}</span></p>
-              <em className={report.urgencia === 'Critica' ? 'bad' : 'warn'}>{labelUrgency(report.urgencia)}</em>
-              <small>{labelStatus(report.flujo_estatus)}{report.taller_asignado ? ` | ${report.taller_asignado} | ${money(report.cotizacion_total)}` : ''}</small>
-              {role === 'admin' && !report.asignacion_id && report.flujo_estatus !== 'Caso cerrado' && <button onClick={() => openAssignment(report)}>Asignar taller</button>}
-              {['admin', 'taller'].includes(role) && report.asignacion_id && report.flujo_estatus !== 'Caso cerrado' && <button onClick={() => advance(report)}>Siguiente etapa</button>}
-              {role === 'admin' && <button className="danger" onClick={() => deleteReport(report)}>Eliminar</button>}
-              <ReportFlow status={report.flujo_estatus} />
-            </article>
-          ))}
+          {visible.map((report) => {
+            const detail = reportDetails[report.id];
+            const loadingFiles = detailLoadingId === report.id;
+            return (
+              <article className="report-card" key={report.id}>
+                <div><strong>#{report.id} {report.numero_economico}</strong><span>{labelDepartment(report.departamento)}</span></div>
+                <p className="failure-summary"><strong>{labelFailure(report.tipo_falla)}</strong><span>{report.descripcion || 'Sin descripción registrada'}</span></p>
+                <em className={report.urgencia === 'Critica' ? 'bad' : 'warn'}>{labelUrgency(report.urgencia)}</em>
+                <small>{labelStatus(report.flujo_estatus)}{report.asignacion_id ? ` | ${report.taller_asignado || 'Sin taller asignado'} | ${money(report.cotizacion_total)}` : ''}</small>
+                {role === 'admin' && <button onClick={() => toggleReportFiles(report)} disabled={loadingFiles}>{loadingFiles ? 'Cargando...' : detail?.open ? 'Ocultar archivos' : 'Ver archivos'}</button>}
+                {role === 'admin' && !report.asignacion_id && report.flujo_estatus !== 'Caso cerrado' && <button onClick={() => openAssignment(report)}>Registrar cotización</button>}
+                {['admin', 'taller'].includes(role) && report.flujo_estatus !== 'Caso cerrado' && <button onClick={() => advance(report)}>Siguiente etapa</button>}
+                {role === 'admin' && <button className="danger" onClick={() => deleteReport(report)}>Eliminar</button>}
+                {role === 'admin' && (detail?.open || loadingFiles) && (
+                  <ReportEvidenceList
+                    detail={detail}
+                    loading={loadingFiles}
+                    onDownload={(evidence) => downloadReportEvidence(report, evidence)}
+                  />
+                )}
+                <ReportFlow status={report.flujo_estatus} />
+              </article>
+            );
+          })}
           {!visible.length && <Empty text="No hay reportes para mostrar." />}
         </div>
       </section>
@@ -748,7 +830,7 @@ function Reports({ vehicles, reports, workshops, refresh, role }) {
           <section className="modal">
             <div className="panel-head">
               <div>
-                <h2>Asignar taller</h2>
+                <h2>Registrar cotización</h2>
                 <p>Sube la cotización y registra el total para descontarlo del presupuesto.</p>
               </div>
               <button onClick={() => setAssigning(null)}>Cerrar</button>
@@ -756,17 +838,17 @@ function Reports({ vehicles, reports, workshops, refresh, role }) {
             {assignmentError && <p className="error">{assignmentError}</p>}
             <form className="stack-form" onSubmit={saveAssignment}>
               <label>Reporte<input value={`#${assigning.id} ${assigning.numero_economico}`} disabled /></label>
-              <label>Taller<input name="taller_nombre" value={assignmentForm.taller_nombre} onChange={(event) => setAssignmentForm({ ...assignmentForm, taller_nombre: event.target.value })} placeholder="Nombre del taller o proveedor" required /></label>
+              <label>Taller opcional<input name="taller_nombre" value={assignmentForm.taller_nombre} onChange={(event) => setAssignmentForm({ ...assignmentForm, taller_nombre: event.target.value })} placeholder="Nombre del taller o proveedor" /></label>
               <div className="two-col">
                 <label>Fecha de ingreso<input type="date" name="fecha_ingreso" value={assignmentForm.fecha_ingreso} onChange={(event) => setAssignmentForm({ ...assignmentForm, fecha_ingreso: event.target.value })} required /></label>
                 <label>Entrega estimada<input type="date" name="fecha_estimada_entrega" value={assignmentForm.fecha_estimada_entrega} onChange={(event) => setAssignmentForm({ ...assignmentForm, fecha_estimada_entrega: event.target.value })} /></label>
               </div>
               <label>Total de cotización<input type="number" name="cotizacion_total" min="1" step="0.01" value={assignmentForm.cotizacion_total} onChange={(event) => setAssignmentForm({ ...assignmentForm, cotizacion_total: event.target.value })} placeholder="Ej. 12500" required /></label>
               <label>Archivo de cotización<input type="file" name="cotizacion" accept="image/jpeg,image/png,image/webp,application/pdf" required /></label>
-              <label>Observaciones<textarea name="observaciones" value={assignmentForm.observaciones} onChange={(event) => setAssignmentForm({ ...assignmentForm, observaciones: event.target.value })} placeholder="Notas sobre la cotización o el taller" /></label>
+              <label>Observaciones<textarea name="observaciones" value={assignmentForm.observaciones} onChange={(event) => setAssignmentForm({ ...assignmentForm, observaciones: event.target.value })} placeholder="Notas sobre la cotización o la atención" /></label>
               <div className="modal-actions">
                 <button type="button" onClick={() => setAssigning(null)}>Cancelar</button>
-                <button className="primary" disabled={assignmentSaving}>{assignmentSaving ? 'Guardando...' : 'Asignar y descontar presupuesto'}</button>
+                <button className="primary" disabled={assignmentSaving}>{assignmentSaving ? 'Guardando...' : 'Registrar y descontar presupuesto'}</button>
               </div>
             </form>
           </section>
@@ -846,6 +928,15 @@ function Repairs({ vehicles, repairs, refresh, role }) {
     }
   }
 
+  async function downloadRepairQuote(item) {
+    setError('');
+    try {
+      await api.descargarCotizacionReparacion(item.id, item.cotizacion_file_name);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   return (
     <section className="panel">
       <div className="panel-head">
@@ -873,6 +964,7 @@ function Repairs({ vehicles, repairs, refresh, role }) {
             </div>
             <em className={item.estatus === 'Entregado' ? 'ok' : 'shop'}>{labelStatus(item.estatus)}</em>
             {['admin', 'departamento'].includes(role) && <button onClick={() => startEdit(item)}>Actualizar</button>}
+            {role === 'admin' && item.cotizacion_stored_name && <button type="button" onClick={() => downloadRepairQuote(item)}><FileDown size={16} /> Cotización</button>}
             {item.fecha_estimada_entrega && <p>Entrega estimada: {item.fecha_estimada_entrega}</p>}
             {Number(item.cotizacion_total || 0) > 0 && <p>Cotización: {money(item.cotizacion_total)}</p>}
             {item.observaciones && <p>{item.observaciones}</p>}
@@ -1201,11 +1293,13 @@ function checklistIssues(item) {
     .map(([, label]) => label);
 }
 
-function VehicleHistory({ vehicles }) {
+function VehicleHistory({ vehicles, role }) {
   const [selectedId, setSelectedId] = useState('');
   const [detail, setDetail] = useState(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [error, setError] = useState('');
+  const [reportDetails, setReportDetails] = useState({});
+  const [detailLoadingId, setDetailLoadingId] = useState(null);
 
   useEffect(() => {
     if (!selectedId && vehicles[0]?.id) setSelectedId(String(vehicles[0].id));
@@ -1219,6 +1313,7 @@ function VehicleHistory({ vehicles }) {
     let active = true;
     setLoadingDetail(true);
     setError('');
+    setReportDetails({});
     api.historialVehiculo(selectedId)
       .then((value) => { if (active) setDetail(value); })
       .catch((err) => { if (active) setError(err.message); })
@@ -1230,6 +1325,34 @@ function VehicleHistory({ vehicles }) {
   const checklists = detail?.checklists || [];
   const reports = detail?.reportes || [];
   const statusHistory = detail?.estatus || [];
+
+  async function toggleReportFiles(report) {
+    const current = reportDetails[report.id];
+    if (current) {
+      setReportDetails((details) => ({ ...details, [report.id]: { ...current, open: !current.open } }));
+      return;
+    }
+
+    setDetailLoadingId(report.id);
+    setError('');
+    try {
+      const reportDetail = await api.detalleReporte(report.id);
+      setReportDetails((details) => ({ ...details, [report.id]: { ...reportDetail, open: true } }));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setDetailLoadingId(null);
+    }
+  }
+
+  async function downloadReportEvidence(report, evidence) {
+    setError('');
+    try {
+      await api.descargarEvidenciaReporte(report.id, evidence);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
 
   return (
     <div className="vehicle-history">
@@ -1308,14 +1431,30 @@ function VehicleHistory({ vehicles }) {
               </div>
             </div>
             <div className="timeline">
-              {reports.map((item) => (
-                <article className="history-row" key={item.id}>
-                  <div><strong>{labelFailure(item.tipo_falla)}</strong><span>{labelUrgency(item.urgencia)}</span></div>
-                  <div><strong>{labelStatus(item.flujo_estatus)}</strong><span>{formatDateTime(item.created_at)}</span></div>
-                  <div><strong>{labelName(item.usuario)}</strong><span>{item.closed_at ? `Cerrado: ${formatDateTime(item.closed_at)}` : 'Caso vigente'}</span></div>
-                  <p>{item.descripcion}</p>
-                </article>
-              ))}
+              {reports.map((item) => {
+                const reportDetail = reportDetails[item.id];
+                const loadingFiles = detailLoadingId === item.id;
+                return (
+                  <article className="history-row" key={item.id}>
+                    <div><strong>{labelFailure(item.tipo_falla)}</strong><span>{labelUrgency(item.urgencia)}</span></div>
+                    <div><strong>{labelStatus(item.flujo_estatus)}</strong><span>{formatDateTime(item.created_at)}</span></div>
+                    <div><strong>{labelName(item.usuario)}</strong><span>{item.closed_at ? `Cerrado: ${formatDateTime(item.closed_at)}` : 'Caso vigente'}</span></div>
+                    {role === 'admin' && <button type="button" onClick={() => toggleReportFiles(item)} disabled={loadingFiles}>{loadingFiles ? 'Cargando...' : reportDetail?.open ? 'Ocultar archivos' : 'Ver archivos'}</button>}
+                    <p>
+                      {item.descripcion}
+                      {item.asignacion_id ? ` | ${item.taller_asignado || 'Sin taller asignado'} | ${money(item.cotizacion_total)}` : ''}
+                      {Number(item.evidencias_count || 0) > 0 ? ` | Archivos: ${item.evidencias_count}` : ''}
+                    </p>
+                    {role === 'admin' && (reportDetail?.open || loadingFiles) && (
+                      <ReportEvidenceList
+                        detail={reportDetail}
+                        loading={loadingFiles}
+                        onDownload={(evidence) => downloadReportEvidence(item, evidence)}
+                      />
+                    )}
+                  </article>
+                );
+              })}
               {!reports.length && <Empty text="Este vehículo no tiene reportes de falla registrados." />}
             </div>
           </section>
@@ -1630,7 +1769,7 @@ function App() {
         {tab === 'reparaciones' && <Repairs vehicles={cache.vehiculos || []} repairs={cache.reparaciones || []} role={user.role} refresh={refresh} />}
         {tab === 'reportes' && <Reports vehicles={cache.vehiculos || []} reports={cache.reportes || []} workshops={cache.talleres || []} role={user.role} refresh={refresh} />}
         {tab === 'checklist' && <Checklist vehicles={cache.vehiculos || []} alerts={cache.checklist} refresh={refresh} />}
-        {tab === 'historial' && <VehicleHistory vehicles={cache.vehiculos || []} />}
+        {tab === 'historial' && <VehicleHistory vehicles={cache.vehiculos || []} role={user.role} />}
         {tab === 'presupuesto' && user.role === 'admin' && <BudgetView data={cache.presupuesto || { asignado: 80000, gastado: 0, disponible: 80000, porcentajeUsado: 0, movimientos: [] }} refresh={refresh} />}
         {tab === 'ayuda' && <HelpView user={user} />}
         {tab === 'usuarios' && user.role === 'admin' && <Users users={cache.usuarios || []} departments={cache.departamentos || []} refresh={refresh} />}

@@ -15,7 +15,7 @@
 
 ```txt
 NODE_ENV=production
-APP_VERSION=0.5.0
+APP_VERSION=1.0.0
 DATABASE_SSL=true
 COOKIE_SECURE=true
 REQUIRE_HTTPS=true
@@ -42,7 +42,7 @@ Para una demo cerrada puedes dejar `CAPTCHA_REQUIRED=false` y `MFA_REQUIRED_ROLE
 
 ## Recomendaciones para venta
 
-- Presentar el sistema como demo funcional v0.5, no como producto final cerrado.
+- Presentar el sistema como V1 operativa, lista para uso inicial controlado.
 - Explicar que las mejoras futuras se priorizarán con retroalimentación de usuarios.
 - Ofrecer una etapa piloto de 15 a 30 días.
 - Crear un canal de soporte: WhatsApp, correo o formulario.

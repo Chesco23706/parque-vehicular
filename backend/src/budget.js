@@ -14,9 +14,9 @@ export async function budgetSummary() {
     movimientos: await all(
       `SELECT a.id, a.cotizacion_total, a.cotizacion_registrada_at, a.created_at,
               COALESCE(a.cotizacion_registrada_at, a.created_at) AS fecha_movimiento,
-              t.nombre AS taller, v.numero_economico, r.tipo_falla, r.urgencia
+              COALESCE(t.nombre, 'Sin taller asignado') AS taller, v.numero_economico, r.tipo_falla, r.urgencia
        FROM asignaciones_taller a
-       JOIN talleres t ON t.id = a.taller_id
+       LEFT JOIN talleres t ON t.id = a.taller_id
        JOIN vehiculos v ON v.id = a.vehiculo_id
        JOIN reportes_fallas r ON r.id = a.reporte_id
        WHERE COALESCE(a.cotizacion_total, 0) > 0

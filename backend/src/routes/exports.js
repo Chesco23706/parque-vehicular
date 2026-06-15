@@ -31,7 +31,7 @@ function cell(value, type = 'String', style = 'Cell') {
 }
 
 function statusStyle(status) {
-  if (['Disponible', 'Reparado'].includes(status)) return 'StatusOk';
+  if (status === 'Disponible') return 'StatusOk';
   if (status === 'En revision') return 'StatusWarn';
   if (status === 'En taller') return 'StatusShop';
   if (['Con falla reportada', 'Fuera de servicio'].includes(status)) return 'StatusBad';

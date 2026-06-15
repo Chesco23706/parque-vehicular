@@ -18,7 +18,7 @@ dashboardRouter.get('/', authRequired, async (req, res) => {
 
   res.json({
     totalVehiculos: Number((await get(`SELECT COUNT(*) AS total FROM vehiculos ${filter.sql}`, filter.params)).total),
-    disponibles: Number((await get(`SELECT COUNT(*) AS total FROM vehiculos ${filterAnd} estatus IN ('Disponible', 'Reparado')`, filter.params)).total),
+    disponibles: Number((await get(`SELECT COUNT(*) AS total FROM vehiculos ${filterAnd} estatus = 'Disponible'`, filter.params)).total),
     conFallas: Number((await get(`SELECT COUNT(*) AS total FROM vehiculos ${filterAnd} estatus IN ('Con falla reportada', 'Fuera de servicio')`, filter.params)).total),
     enTaller: Number((await get(`SELECT COUNT(*) AS total FROM vehiculos ${filterAnd} estatus = 'En taller'`, filter.params)).total),
     reportesPendientes: Number((await get(`SELECT COUNT(*) AS total FROM reportes_fallas ${filterAnd} flujo_estatus != 'Caso cerrado'`, filter.params)).total),
