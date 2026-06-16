@@ -3,6 +3,7 @@ import { run } from '../db.js';
 import { audit } from '../audit.js';
 import { authRequired, requireRole } from '../middleware/auth.js';
 import { budgetConfigId, budgetSummary, normalizeBudgetMonth } from '../budget.js';
+import { streamBudgetReportPdf } from '../budget-report-pdf.js';
 
 export const budgetRouter = Router();
 
@@ -19,6 +20,21 @@ budgetRouter.get('/', authRequired, async (req, res) => {
     return res.status(400).json({ message: 'Mes de presupuesto invalido' });
   }
   res.json(await budgetSummary(month));
+});
+
+budgetRouter.get('/reporte.pdf', authRequired, requireRole('admin'), async (req, res) => {
+  let month;
+  try {
+    month = requestMonth(req);
+  } catch {
+    return res.status(400).json({ message: 'Mes de presupuesto invalido' });
+  }
+
+  const summary = await budgetSummary(month);
+  res.setHeader('Content-Disposition', `attachment; filename="informe-presupuesto-${month}.pdf"`);
+  res.type('application/pdf');
+  await audit(req, 'descargar_informe_presupuesto', 'presupuesto_config', budgetConfigId(month), { month, movimientos: summary.movimientos.length });
+  streamBudgetReportPdf(summary, { user: req.user }, res);
 });
 
 budgetRouter.put('/', authRequired, requireRole('admin'), async (req, res) => {

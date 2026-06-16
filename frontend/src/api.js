@@ -121,6 +121,7 @@ export const api = {
   dashboard: () => request('/dashboard'),
   presupuesto: (month) => request(`/presupuesto${month ? `?month=${encodeURIComponent(month)}` : ''}`),
   actualizarPresupuesto: (monto, month) => request('/presupuesto', { method: 'PUT', body: JSON.stringify({ monto, month }) }),
+  descargarInformePresupuesto: (month) => downloadFile(`/presupuesto/reporte.pdf?month=${encodeURIComponent(month)}`, `informe-presupuesto-${month}.pdf`),
   catalogos: () => request('/meta/catalogos'),
   departamentos: () => request('/meta/departamentos'),
   vehiculos: () => request('/vehiculos'),

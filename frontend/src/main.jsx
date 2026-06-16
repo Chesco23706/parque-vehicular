@@ -21,8 +21,8 @@ import {
 import { api } from './api.js';
 import './styles.css';
 
-const APP_VERSION = 'V1.1';
-const APP_CHANGE_TITLE = 'Informe detallado mensual de presupuesto';
+const APP_VERSION = 'V1.2';
+const APP_CHANGE_TITLE = 'Informe formal de presupuesto en PDF';
 const APP_RELEASE_TITLE = `${APP_VERSION} - ${APP_CHANGE_TITLE}`;
 document.title = APP_RELEASE_TITLE;
 const MAX_EVIDENCE_FILES = 5;
@@ -1646,12 +1646,23 @@ function BudgetView({ data, refresh }) {
     }
   }
 
+  async function downloadBudgetReport() {
+    setMessage('');
+    setError('');
+    try {
+      await api.descargarInformePresupuesto(budgetMonth);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   return (
     <div className="budget-page">
       <section className="panel budget-overview">
         <div>
           <h2>Estado del presupuesto</h2>
           <p>Mes {summary.month}</p>
+          <button type="button" onClick={downloadBudgetReport} disabled={loadingBudget}><FileDown size={16} /> Descargar informe PDF</button>
         </div>
         <div className="budget-chart" style={{ '--used': `${used}%` }}>
           <div>

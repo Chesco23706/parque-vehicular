@@ -611,6 +611,9 @@ em {
   align-items: center;
 }
 .budget-overview p { margin: 6px 0 0; color: #736947; }
+.budget-overview button {
+  margin-top: 14px;
+}
 .budget-chart {
   width: 190px;
   aspect-ratio: 1;
